@@ -609,13 +609,31 @@ def flight_status(subject: Subject, prev: dict, airports, now: int) -> dict | No
     # --- time-share breakdown -------------------------------------------
     # One sample per pass, no extra network call — this is bookkeeping on
     # data already fetched above. Every second in the tracked window gets
-    # attributed to exactly one bucket: an airport ICAO, IN_FLIGHT, or
-    # NO_SIGNAL (no ADS-B return at all that pass).
+    # attributed to exactly one bucket: an airport ICAO, IN_FLIGHT, or (only
+    # when nothing at all is known yet) NO_SIGNAL.
     if state == "ON_GROUND":
         bucket = here or "UNKNOWN_AIRPORT"
     elif state == "AIRBORNE":
         bucket = "IN_FLIGHT"
+    elif was == "ON_GROUND":
+        # None of the three ADS-B sources have this aircraft right now, but
+        # it was last confirmed parked. By far the most likely explanation
+        # is a grounded aircraft's transponder being off, not a silent
+        # takeoff with nobody hearing it — the same "stays there until
+        # proven otherwise" assumption memory["last_ground_icao"] above
+        # already relies on. So this time is attributed to wherever it was
+        # last seen rather than a bare "no signal".
+        bucket = memory.get("last_ground_icao") or "UNKNOWN_AIRPORT"
+    elif was == "AIRBORNE":
+        # Last confirmed airborne with no landing recorded since — an
+        # ADS-B coverage gap mid-flight (rural or oceanic dead zones are
+        # routine) is far likelier than the aircraft vanishing, so this
+        # stays IN_FLIGHT: still the same leg, not a third state.
+        bucket = "IN_FLIGHT"
     else:
+        # This aircraft has never once been located — nothing to carry
+        # forward to, so "no signal" is an honest description here, not a
+        # fallback covering for a gap in an otherwise-known trajectory.
         bucket = "NO_SIGNAL"
 
     samples: list[dict] = memory.setdefault("samples", [])
@@ -839,13 +857,31 @@ def vessel_status(subject: Subject, prev: dict, ports, ais_cache: dict, now: int
     # card into it the same way it already does a plane card, rather than
     # needing a second chart. Only the bucket vocabulary is vessel-specific:
     # a port UNLOCODE, "UNDERWAY" (the "not parked anywhere" bucket — the
-    # vessel equivalent of a flight's IN_FLIGHT), "UNKNOWN_PORT", or
-    # "NO_SIGNAL", instead of an airport ICAO / IN_FLIGHT / UNKNOWN_AIRPORT.
+    # vessel equivalent of a flight's IN_FLIGHT), "UNKNOWN_PORT", or (only
+    # when nothing at all is known yet) "NO_SIGNAL". AIS coverage is far
+    # patchier than ADS-B's — a private yacht is only ever heard when it's
+    # near a receiver aisstream.io's network happens to cover — so without
+    # this carry-forward a boat sitting quietly at anchor between sparse
+    # receiver passes would misleadingly read as mostly "no signal" instead
+    # of mostly "in port".
     if state == "IN_PORT":
         bucket = here or "UNKNOWN_PORT"
     elif state == "UNDERWAY":
         bucket = "UNDERWAY"
+    elif was == "IN_PORT":
+        # No fresh AIS message this pass, but last confirmed moored — a
+        # vessel doesn't quietly slip away unheard, so this time is
+        # attributed to wherever it was last seen rather than "no signal".
+        bucket = memory.get("last_port") or "UNKNOWN_PORT"
+    elif was == "UNDERWAY":
+        # Last confirmed underway with no arrival recorded since — a gap
+        # in receiver coverage mid-transit, not a disappearance, so this
+        # stays UNDERWAY: still the same passage, not a third state.
+        bucket = "UNDERWAY"
     else:
+        # This vessel has never once been located — nothing to carry
+        # forward to, so "no signal" is an honest description here, not a
+        # fallback covering for a gap in an otherwise-known trajectory.
         bucket = "NO_SIGNAL"
 
     samples: list[dict] = memory.setdefault("samples", [])
@@ -967,6 +1003,14 @@ def fetch_wikipedia_info(title: str) -> dict | None:
     license field, we just check which path the thumbnail actually lives on
     and drop anything that isn't Commons-hosted. If that filters out the
     photo, the person still gets the Wikipedia link with no image.
+
+    Separately: the summary endpoint's "thumbnail" is simply whatever image
+    a page's infobox happens to be set to — usually a real photo, but for
+    some people (Amancio Ortega among them) that's a coat of arms, flag, or
+    seal instead of a portrait. Every one of those is distributed as SVG on
+    Wikipedia/Commons; an actual photograph never is. So an SVG thumbnail
+    gets dropped the same way a non-Commons one does — same "no image beats
+    the wrong image" rule, just catching content rather than licensing.
     """
     url = f"https://en.wikipedia.org/api/rest_v1/page/summary/{urllib.parse.quote(title)}"
     try:
@@ -983,10 +1027,12 @@ def fetch_wikipedia_info(title: str) -> dict | None:
     thumb = (data.get("thumbnail") or {}).get("source")
 
     photo_url = None
-    if thumb and "/wikipedia/commons/" in thumb:
-        photo_url = thumb
-    elif thumb:
+    if thumb and "/wikipedia/commons/" not in thumb:
         print(f"[wikipedia] {title}: thumbnail not on Commons, dropping image", file=sys.stderr)
+    elif thumb and thumb.lower().split("?")[0].endswith(".svg"):
+        print(f"[wikipedia] {title}: thumbnail is a non-photo graphic (SVG), dropping image", file=sys.stderr)
+    elif thumb:
+        photo_url = thumb
 
     if not page_url:
         return None
@@ -1183,8 +1229,26 @@ def build_snapshot() -> dict:
         news = news_cache.get(subject.id, [])
 
         wiki_entry = wiki_cache.get(subject.id)
-        wiki_stale = not wiki_entry or (now - wiki_entry.get("fetchedAt", 0)) >= WIKI_REFRESH_SECONDS
+        # A cached photoUrl that's an SVG predates the content filter above
+        # (it could only have gotten in before that check existed) — force
+        # a re-fetch regardless of the normal 30-day timer rather than
+        # waiting up to a month for a known-wrong cached image to clear.
+        wiki_photo_bad = bool(
+            wiki_entry
+            and wiki_entry.get("photoUrl")
+            and wiki_entry["photoUrl"].lower().split("?")[0].endswith(".svg")
+        )
+        wiki_stale = (
+            not wiki_entry
+            or wiki_photo_bad
+            or (now - wiki_entry.get("fetchedAt", 0)) >= WIKI_REFRESH_SECONDS
+        )
         if subject.wikipedia_title and wiki_stale:
+            if wiki_photo_bad:
+                print(
+                    f"[wikipedia] {subject.id}: discarding non-photo (SVG) cached image, re-fetching",
+                    file=sys.stderr,
+                )
             info = fetch_wikipedia_info(subject.wikipedia_title)
             if info is not None:
                 wiki_cache[subject.id] = {**info, "fetchedAt": now}
