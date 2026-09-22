@@ -24,7 +24,7 @@ jobs:
       - name: Burst-listen for AIS updates
         env:
           AISSTREAM_API_KEY: ${{ secrets.AISSTREAM_API_KEY }}
-          AIS_BURST_SECONDS: "45"
+          AIS_BURST_SECONDS: "270"
         run: |
           if [ -z "$AISSTREAM_API_KEY" ]; then
             echo "AISSTREAM_API_KEY repo secret not set — skipping this run." \
