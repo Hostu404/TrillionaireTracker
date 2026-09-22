@@ -476,13 +476,13 @@ def estimate_heading_destination(
 
 def _fetch_readsb_style(url: str, icao_hex: str, source_label: str) -> dict | None:
     """
-    Shared parser for adsb.lol/airplanes.live's identical `{"ac": [...]}`
-    ("readsb"/tar1090) response shape — the same source format the client's
-    `parseReadsbAircraft` (LiveTracking.kt) already reads. Returns the
-    matching aircraft's raw record (alt_baro/lat/lon/track — the same keys
-    [flight_status] already expects from [fetch_aircraft]), or None if this
-    source has nothing for this hex right now. One request per call, never a
-    tight loop — be a good citizen to these free community feeds.
+    Shared parser for adsb.lol's `{"ac": [...]}` ("readsb"/tar1090) response
+    shape — the same source format the client's `parseReadsbAircraft`
+    (LiveTracking.kt) already reads. Returns the matching aircraft's raw
+    record (alt_baro/lat/lon/track — the same keys [flight_status] already
+    expects from [fetch_aircraft]), or None if this source has nothing for
+    this hex right now. One request per call, never a tight loop — be a good
+    citizen to these free community feeds.
     """
     try:
         data = get_json(url)
@@ -521,7 +521,7 @@ def _fetch_opensky(icao_hex: str) -> dict | None:
 
 def fetch_aircraft(icao_hex: str) -> dict | None:
     """
-    Three free, keyless sources, tried in order, stopping at the first one
+    Two free, keyless sources, tried in order, stopping at the first one
     that actually has this aircraft right now — the same redundancy the
     client already applies to the live in-app position dot (see
     `LiveFlightTracker` in LiveTracking.kt), extended here to the source that
@@ -531,20 +531,23 @@ def fetch_aircraft(icao_hex: str) -> dict | None:
     permanent "NO_SIGNAL" slice nothing could ever fix retroactively once it
     was written. adsb.lol stays first since it's the proven, already-working
     source for the rest of the roster — a healthy poll still costs exactly
-    the one request it always has; OpenSky and airplanes.live only fire when
-    it comes up empty.
+    the one request it always has; OpenSky only fires when it comes up empty.
+
+    A third source, airplanes.live, used to sit here too. Their public
+    `/v2/hex/` endpoint has since locked down (returns a flat 403 telling
+    integrators to contact them for approved access — confirmed against
+    other open-source trackers hitting the exact same wall in 2026, not just
+    a transient block), so it never succeeds anymore. Keeping it in the
+    chain cost a wasted request and a stderr line on every single miss for
+    no actual redundancy, so it's removed rather than left as dead weight.
+    If they ever reopen public access, `_fetch_readsb_style` still works
+    unchanged for their response shape — just add a third call back in here.
     """
     ac = _fetch_readsb_style(f"https://api.adsb.lol/v2/hex/{icao_hex.lower()}", icao_hex, "adsb")
     if ac is not None:
         return ac
 
-    ac = _fetch_opensky(icao_hex)
-    if ac is not None:
-        return ac
-
-    return _fetch_readsb_style(
-        f"https://api.airplanes.live/v2/hex/{icao_hex.lower()}", icao_hex, "airplanes.live"
-    )
+    return _fetch_opensky(icao_hex)
 
 
 def flight_status(subject: Subject, prev: dict, airports, now: int) -> dict | None:
