@@ -179,7 +179,20 @@
     "",
     "birthDate/residence/bio sourced from Wikipedia (2026): dell — born",
     "Houston, TX; Austin, TX residence. ortega — born Busdongo de Arbas,",
-    "Spain; A Coruña, Spain residence."
+    "Spain; A Coruña, Spain residence.",
+    "",
+    "--- page.mmsi/vesselName removed 2026-09-22: the 2026-09-22 pass above",
+    "carried forward SeedData.kt's bundled 'SENSES' MMSI (319833000) for",
+    "page, but that boat was sold in 2020 — Boat International's tech-",
+    "billionaire yacht roundup states outright 'Senses was sold by Page to",
+    "an unknown buyer in 2020' and says he doesn't currently own a",
+    "superyacht, and superyachtfan.com's own SENSES page separately",
+    "corroborates this by naming its current owner as Andrea Recordati (an",
+    "unrelated Italian pharma billionaire), not Page. Tracking that MMSI",
+    "under Page's name would have quietly attributed Recordati's boat",
+    "movements to him, which is worse than showing no vessel at all — so",
+    "removed rather than left in. Add a real mmsi/vesselName back for page",
+    "only once a current, confidently-sourced yacht turns up for him."
   ],
 
   "people": [
@@ -293,9 +306,6 @@
       "privateStakesUsd": 0,
       "cashUsd": 0,
       "liabilitiesUsd": 0,
-      "mmsi": "319833000",
-      "vesselName": "SENSES",
-      "vesselVerified": true,
       "newsQuery": "Larry Page",
       "bio": "Born in East Lansing, Michigan. Earned a B.S. in computer engineering from the University of Michigan, then a master's at Stanford — where he took a leave from the PhD program in 1998 to co-found Google."
     },
