@@ -637,7 +637,28 @@ def flight_status(subject: Subject, prev: dict, airports, now: int) -> dict | No
         bucket = "NO_SIGNAL"
 
     samples: list[dict] = memory.setdefault("samples", [])
-    samples.append({"t": now, "bucket": bucket})
+    # One-time retroactive cleanup: an earlier version of this worker
+    # recorded a "NO_SIGNAL" sample every pass even before this aircraft was
+    # ever confirmed anywhere, so a plane that's simply never been caught by
+    # any of the three ADS-B sources could still show a card reading "100%
+    # no signal". Since bucket only ever becomes "NO_SIGNAL" when nothing has
+    # ever been confirmed (see the else branch above), any such entry still
+    # sitting in an old samples list is exactly that dead weight — drop it so
+    # existing bad history clears immediately instead of aging out over the
+    # next 7 days.
+    samples[:] = [s for s in samples if s["bucket"] != "NO_SIGNAL"]
+
+    if bucket == "NO_SIGNAL":
+        # Nothing has ever been confirmed for this aircraft — don't even
+        # start the tracking clock. Leaving samples empty means
+        # trackedSeconds stays 0, which is exactly the signal the client
+        # already uses to hide this card entirely (see PersonDetailScreen's
+        # `if (flight.trackedSeconds > 0)` gate) instead of showing a
+        # misleading "100% no signal" strip for a plane that was simply
+        # never heard.
+        pass
+    else:
+        samples.append({"t": now, "bucket": bucket})
 
     # Prune to the window, but carry forward whatever bucket was active going
     # into it, so the time between `cutoff` and the first kept sample is
@@ -885,7 +906,22 @@ def vessel_status(subject: Subject, prev: dict, ports, ais_cache: dict, now: int
         bucket = "NO_SIGNAL"
 
     samples: list[dict] = memory.setdefault("samples", [])
-    samples.append({"t": now, "bucket": bucket})
+    # Same one-time retroactive cleanup as flight_status() — drop any
+    # already-persisted "NO_SIGNAL" samples so a boat that's simply never
+    # been heard on AIS clears immediately instead of aging out of the
+    # 7-day window on its own.
+    samples[:] = [s for s in samples if s["bucket"] != "NO_SIGNAL"]
+
+    if bucket == "NO_SIGNAL":
+        # Nothing has ever been confirmed for this vessel — don't start the
+        # tracking clock. trackedSeconds stays 0, which is what the client
+        # already gates the card's visibility on (see
+        # PersonDetailScreen's `if (vessel.trackedSeconds > 0)`), instead of
+        # showing a misleading "100% no signal" strip for a boat that was
+        # simply never heard.
+        pass
+    else:
+        samples.append({"t": now, "bucket": bucket})
 
     carry_bucket = None
     for s in samples:
