@@ -32,6 +32,15 @@ An Android client built with **Kotlin and Jetpack Compose** that tracks live net
 * **Socials & News:** Clean link-outs to verified profiles (X, Bluesky) without pay-per-read API overhead.
 
 ---
+## Why is Trillionaire Tracker?
+https://www.youtube.com/watch?v=wP8RgWJ76xE
+
+Further reading,
+
+https://www.youtube.com/watch?v=jUwh-C5w7II
+
+
+---
 
 ## Architecture & Cost Efficiency
 
