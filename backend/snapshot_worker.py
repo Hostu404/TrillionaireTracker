@@ -8,7 +8,8 @@ upstream call volume below is the TOTAL for the whole product — it does not gr
 when the user count does.
 
 Per pass, upstream:
-    ~1 quote request      (batched, all tickers at once)
+    K quote requests       (K = distinct tracked tickers, one request each —
+                            see [fetch_quotes] for why this isn't batched)
     N ADS-B requests      (N = tracked aircraft, only when due)
     0 AIS requests        (vessel positions are read from ais_cache.json,
                            written by the separate ais_listener.py process —
@@ -61,45 +62,61 @@ WIKI_REFRESH_SECONDS = 30 * 86_400   # a photo/article link barely ever changes
 # ---------------------------------------------------------------- http
 
 
-def get(url: str) -> bytes:
-    req = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
+def get(url: str, headers: dict[str, str] | None = None) -> bytes:
+    req = urllib.request.Request(url, headers=headers or {"User-Agent": USER_AGENT})
     with urllib.request.urlopen(req, timeout=TIMEOUT) as resp:
         return resp.read()
 
 
-def get_json(url: str) -> Any:
-    return json.loads(get(url).decode("utf-8", "replace"))
+def get_json(url: str, headers: dict[str, str] | None = None) -> Any:
+    return json.loads(get(url, headers).decode("utf-8", "replace"))
 
 
 # ---------------------------------------------------------------- quotes
 
 
+# Stooq's old free /q/l/ CSV endpoint (used here until Sept 2026) started
+# requiring a registered API key as of March 2026 — see
+# github.com/pydata/pandas-datareader/issues/1012 — which turned every
+# quote into a 404 instead of data. Yahoo Finance's unofficial "chart"
+# endpoint is the replacement: still free and keyless (Yahoo shut down its
+# *official*, key-requiring API back in 2017 and never replaced it — this
+# is the same undocumented endpoint yfinance and most scrapers use for a
+# live price), just no longer batch-capable, hence one request per ticker
+# below rather than Stooq's old single combined call. Fine at this app's
+# scale (a handful of tickers, polled every 5 minutes) — see [fetch_quotes].
+YAHOO_QUOTE_UA = (
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+    "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+)
+
+
 def fetch_quotes(tickers: list[str]) -> dict[str, float]:
     """
-    Stooq: free, keyless, batch-capable. Swap this one function for Finnhub or
-    Twelve Data if you want intraday granularity — nothing else changes.
+    One request per ticker against Yahoo Finance's unofficial chart
+    endpoint (see the module-level comment above this function for why
+    Stooq's old batched CSV call was replaced). A plain custom User-Agent
+    gets blocked here in practice — Yahoo's anti-bot layer treats it like
+    any other scraper request — so this one call uses a real browser UA
+    ([YAHOO_QUOTE_UA]) instead of this module's usual [USER_AGENT]. Swap
+    this function for a paid provider (Finnhub, Twelve Data) if you ever
+    want a real SLA instead of an unofficial endpoint; nothing else changes.
     """
     if not tickers:
         return {}
 
-    symbols = ",".join(f"{t.lower()}.us" for t in tickers)
-    url = f"https://stooq.com/q/l/?s={symbols}&f=sd2t2ohlcv&h&e=csv"
-
     out: dict[str, float] = {}
-    try:
-        text = get(url).decode("utf-8", "replace")
-    except Exception as exc:                      # noqa: BLE001
-        print(f"[quotes] failed: {exc}", file=sys.stderr)
-        return out
-
-    for row in csv.DictReader(text.splitlines()):
-        sym = (row.get("Symbol") or "").split(".")[0].upper()
-        close = row.get("Close")
-        if not sym or close in (None, "", "N/D"):
-            continue
+    for ticker in tickers:
+        url = (
+            "https://query2.finance.yahoo.com/v8/finance/chart/"
+            f"{urllib.parse.quote(ticker)}?range=1d&interval=1d"
+        )
         try:
-            out[sym] = float(close)
-        except ValueError:
+            payload = get_json(url, headers={"User-Agent": YAHOO_QUOTE_UA})
+            price = payload["chart"]["result"][0]["meta"]["regularMarketPrice"]
+            out[ticker.upper()] = float(price)
+        except Exception as exc:                      # noqa: BLE001
+            print(f"[quotes] {ticker}: failed: {exc}", file=sys.stderr)
             continue
 
     missing = [t for t in tickers if t.upper() not in out]
