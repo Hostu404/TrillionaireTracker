@@ -21,6 +21,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.produceState
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.BiasAlignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.runtime.remember
@@ -418,6 +419,15 @@ private fun PersonHeader(
                 model = photoUrl,
                 contentDescription = "Photo of $name",
                 contentScale = ContentScale.Crop,
+                // Default Crop alignment is dead center, which crops evenly
+                // top and bottom — fine for a landscape photo, but this
+                // banner is much wider than a typical portrait headshot, so
+                // filling it vertically crops a lot, and centering that crop
+                // reliably cuts into foreheads. Biased toward the top (with
+                // a little headroom rather than a hard top edge) instead,
+                // so the crop comes off the bottom — shoulders/chest, never
+                // anyone's head — no matter which photo loads here.
+                alignment = BiasAlignment(horizontalBias = 0f, verticalBias = -0.6f),
                 placeholder = ColorPainter(TT.surface),
                 modifier = Modifier
                     .fillMaxSize()
