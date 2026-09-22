@@ -1,11 +1,43 @@
 # Trillionaire Tracker
 
-Android client for a live "is anyone over $1,000,000,000,000 right now" tracker,
-plus the backend worker that feeds it.
+An Android client built with **Kotlin and Jetpack Compose** that tracks live net worth milestones, real-time aircraft and vessel movements, news, and biographical histories. 
 
-Kotlin + Compose, no WebView. Opens and builds in Android Studio as-is: it ships
-with an embedded seed snapshot, so there is nothing to stand up before you can
-run it.
+**[Download Latest APK Release](https://github.com/hostu404/trillionaire-tracker/releases/latest)**
+
+---
+
+## Features
+
+### Net Worth
+* **Formula:** $\text{sum}(\text{shares} \times \text{live price}) + \text{private stakes} - \text{liabilities} + \text{cash}$
+* **Sourcing:** Share counts come from SEC filings (Form 4, 13D/G, proxy statements). Private stakes use hand-set marks from the last funding round. 
+* **The Debt-Clock Trick:** Between snapshots, the client extrapolates locally from a drift rate so the figure animates continuously without extra network traffic.
+
+### Flights
+* **Live ADS-B Tracking:** Powered by `adsb.lol` (free, unfiltered, community-fed).
+* **Privacy-First Location:** Airport-level granularity only (never raw coordinates). A 7-day rolling history tracks airport stops.
+* **Heading Estimates:** Projects current position against known airports within a $\pm 12^\circ$ cone while airborne.
+* **Time-by-Location Breakdown:** A person screen donut chart splits the tracked window across airports, in-flight time, and signal gaps.
+
+### Vessels
+* **Maritime AIS Tracking:** Uses a separate long-term backend listener (`backend/ais_listener.py`) connected to `aisstream.io` via WebSockets, caching updates to prevent per-user API costs.
+* **Port Granularity:** Follows the same strict privacy shape as flights—port stops only, never open-water coordinates.
+
+### Biography, Social, & News
+* **Static Profile Data:** Birthdates, primary residences (city/region only), and short biographical prose (birthplace and education). Age is computed client-side dynamically.
+* **Wikipedia Integration:** Fetches summaries and free-license Wikimedia Commons photos via the keyless Wikipedia REST API, cached for 30 days.
+* **Socials & News:** Clean link-outs to verified profiles (X, Bluesky) without pay-per-read API overhead.
+
+---
+
+## Architecture & Cost Efficiency
+
+Clients never call third-party APIs directly. A single backend worker polls upstream data and writes a single JSON document, which a CDN edge serves to any number of clients:
+
+$$\text{Worker (1 pass/min)} \longrightarrow \texttt{snapshot.json} \longrightarrow \text{CDN Edge} \longrightarrow \text{Any Number of Clients}$$
+
+* **Flat Scaling Cost:** Ten users and ten million users cost the exact same upstream.
+* **Embedded Seed Snapshot:** The app ships with a working seed snapshot so it opens and runs out-of-the-box without manual setup.
 
 ## Run it
 
