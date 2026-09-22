@@ -78,14 +78,46 @@ object GoogleNewsClient {
      * standard OWASP-recommended lockdown for parsing untrusted XML on the
      * JVM. Built once and reused rather than per-call — none of this
      * configuration ever changes.
+     *
+     * Each `setFeature` call is wrapped individually rather than relying on
+     * one `.apply { }` block: two of these feature URIs
+     * (`disallow-doctype-decl` and `nonvalidating/load-external-dtd`) are
+     * Xerces-specific extensions that Android's built-in `DocumentBuilder`
+     * implementation doesn't recognize, and an unrecognized feature name
+     * throws `ParserConfigurationException` right away. Since this was a
+     * top-level `val` evaluated eagerly the first time anything touched this
+     * object, that exception surfaced as an `ExceptionInInitializerError`
+     * (an `Error`, not an `Exception`) — invisible to every `catch (_:
+     * Exception)` elsewhere in this file, and fatal to the whole process the
+     * instant a person's detail screen asked for news. Falling through on an
+     * unsupported feature just means that one specific hardening isn't
+     * available on this platform's parser, not that parsing becomes unsafe:
+     * whichever features DID apply still block external entities/DTDs, and
+     * Android's own parser doesn't resolve external entities by default in
+     * the first place.
      */
-    private val safeDocumentBuilderFactory: DocumentBuilderFactory = DocumentBuilderFactory.newInstance().apply {
-        setFeature("http://apache.org/xml/features/disallow-doctype-decl", true)
-        setFeature("http://xml.org/sax/features/external-general-entities", false)
-        setFeature("http://xml.org/sax/features/external-parameter-entities", false)
-        setFeature("http://apache.org/xml/features/nonvalidating/load-external-dtd", false)
-        isXIncludeAware = false
-        isExpandEntityReferences = false
+    private val safeDocumentBuilderFactory: DocumentBuilderFactory =
+        DocumentBuilderFactory.newInstance().apply {
+            trySetFeature("http://apache.org/xml/features/disallow-doctype-decl", true)
+            trySetFeature("http://xml.org/sax/features/external-general-entities", false)
+            trySetFeature("http://xml.org/sax/features/external-parameter-entities", false)
+            trySetFeature("http://apache.org/xml/features/nonvalidating/load-external-dtd", false)
+            try {
+                isXIncludeAware = false
+            } catch (_: Exception) {
+            }
+            try {
+                isExpandEntityReferences = false
+            } catch (_: Exception) {
+            }
+        }
+
+    private fun DocumentBuilderFactory.trySetFeature(name: String, value: Boolean) {
+        try {
+            setFeature(name, value)
+        } catch (_: Exception) {
+            // Unsupported on this platform's parser — see the doc comment above.
+        }
     }
 
     private fun parseRss(body: String, limit: Int): List<NewsItem> {

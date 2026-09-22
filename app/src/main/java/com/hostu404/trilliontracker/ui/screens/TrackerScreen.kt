@@ -66,7 +66,11 @@ fun TrackerScreen(
                 item { BiggestMoverCard(mover) }
             }
             item { SectionLabel(text = "TOP GONKS") }
-            itemsIndexed(state.rankedPeople, key = { _, p -> p.id }) { index, person ->
+            // state.topTen, not state.rankedPeople — the backend/holdings.json
+            // bench can track more than 10 people (see TrackerUiState.topTen's
+            // doc comment) so a near-boundary overtake surfaces automatically;
+            // this screen only ever shows the top 10 of whatever that bench is.
+            itemsIndexed(state.topTen, key = { _, p -> p.id }) { index, person ->
                 PersonRow(
                     rank = index + 1,
                     person = person,
@@ -310,11 +314,13 @@ private fun StatusPanel(state: TrackerUiState) {
 }
 
 /**
- * Whoever moved the most today, either direction — null when there's
- * nobody to point to yet (empty list) or nothing's moved at all.
+ * Whoever moved the most today, either direction, among [TrackerUiState.topTen]
+ * — not the wider tracked bench, so this never points at someone the person
+ * can't even see in the list below. Null when there's nobody to point to yet
+ * (empty list) or nothing's moved at all.
  */
 private fun biggestMover(state: TrackerUiState): Person? =
-    state.people
+    state.topTen
         .filter { it.dayChangeUsd != 0.0 }
         .maxByOrNull { kotlin.math.abs(it.dayChangeUsd) }
 

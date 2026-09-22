@@ -474,19 +474,77 @@ def estimate_heading_destination(
     return best
 
 
-def fetch_aircraft(icao_hex: str) -> dict | None:
+def _fetch_readsb_style(url: str, icao_hex: str, source_label: str) -> dict | None:
     """
-    adsb.lol — community-fed, unfiltered, free. Be a good citizen: one request
-    per aircraft per pass, never a tight loop. If you scale past a handful of
-    tails, feed a receiver back to the network or move to a paid feed.
+    Shared parser for adsb.lol/airplanes.live's identical `{"ac": [...]}`
+    ("readsb"/tar1090) response shape — the same source format the client's
+    `parseReadsbAircraft` (LiveTracking.kt) already reads. Returns the
+    matching aircraft's raw record (alt_baro/lat/lon/track — the same keys
+    [flight_status] already expects from [fetch_aircraft]), or None if this
+    source has nothing for this hex right now. One request per call, never a
+    tight loop — be a good citizen to these free community feeds.
     """
     try:
-        data = get_json(f"https://api.adsb.lol/v2/hex/{icao_hex.lower()}")
+        data = get_json(url)
     except Exception as exc:                      # noqa: BLE001
-        print(f"[adsb] {icao_hex}: {exc}", file=sys.stderr)
+        print(f"[{source_label}] {icao_hex}: {exc}", file=sys.stderr)
         return None
-    ac = data.get("ac") or []
-    return ac[0] if ac else None
+    for entry in data.get("ac") or []:
+        if str(entry.get("hex", "")).lower() == icao_hex.lower():
+            return entry
+    return None
+
+
+def _fetch_opensky(icao_hex: str) -> dict | None:
+    """
+    OpenSky Network's `/states/all`, scoped to one icao24 — the same public
+    schema the client's [OpenSkyClient] already relies on (index 5/6 =
+    lon/lat, 8 = on_ground, 10 = true track). Adapted into the same
+    alt_baro/lat/lon/track shape every other source in [fetch_aircraft]
+    returns, so [flight_status] doesn't need to know which source actually
+    answered.
+    """
+    try:
+        data = get_json(f"https://opensky-network.org/api/states/all?icao24={icao_hex.lower()}")
+    except Exception as exc:                      # noqa: BLE001
+        print(f"[opensky] {icao_hex}: {exc}", file=sys.stderr)
+        return None
+    states = data.get("states") or []
+    if not states:
+        return None
+    row = states[0]
+    lon, lat, on_ground, track = row[5], row[6], row[8], row[10]
+    if lat is None or lon is None:
+        return None
+    return {"lat": lat, "lon": lon, "alt_baro": "ground" if on_ground else None, "track": track}
+
+
+def fetch_aircraft(icao_hex: str) -> dict | None:
+    """
+    Three free, keyless sources, tried in order, stopping at the first one
+    that actually has this aircraft right now — the same redundancy the
+    client already applies to the live in-app position dot (see
+    `LiveFlightTracker` in LiveTracking.kt), extended here to the source that
+    matters more: this function's return value gets permanently folded into
+    every person's persisted 7-day locationBreakdown/recentStops history
+    below, so a single source's transient gap or rate limit used to become a
+    permanent "NO_SIGNAL" slice nothing could ever fix retroactively once it
+    was written. adsb.lol stays first since it's the proven, already-working
+    source for the rest of the roster — a healthy poll still costs exactly
+    the one request it always has; OpenSky and airplanes.live only fire when
+    it comes up empty.
+    """
+    ac = _fetch_readsb_style(f"https://api.adsb.lol/v2/hex/{icao_hex.lower()}", icao_hex, "adsb")
+    if ac is not None:
+        return ac
+
+    ac = _fetch_opensky(icao_hex)
+    if ac is not None:
+        return ac
+
+    return _fetch_readsb_style(
+        f"https://api.airplanes.live/v2/hex/{icao_hex.lower()}", icao_hex, "airplanes.live"
+    )
 
 
 def flight_status(subject: Subject, prev: dict, airports, now: int) -> dict | None:
@@ -1072,7 +1130,18 @@ def build_snapshot() -> dict:
             continue
 
         series = history.get(subject.id)
-        if series is None:
+        if not series or not isinstance(series[-1], dict):
+            # Either genuinely new, or a leftover history entry in a shape
+            # this code no longer writes (e.g. a bare number instead of a
+            # {"t","v"} point — this has actually happened for a couple of
+            # people whose price history predates the current schema).
+            # Both get the same one-time backfill treatment rather than
+            # crashing the whole pass on data this code doesn't recognize.
+            if series:
+                print(
+                    f"[history] {subject.id}: discarding malformed history entry, re-backfilling",
+                    file=sys.stderr,
+                )
             series = backfill_history(subject, now)
             if series:
                 print(f"[history] {subject.id}: backfilled {len(series)} points ({HISTORY_WINDOW_SECONDS // 86_400}d)")
