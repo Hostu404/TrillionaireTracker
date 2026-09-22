@@ -713,7 +713,17 @@ def flight_status(subject: Subject, prev: dict, airports, now: int) -> dict | No
         "arrivedIcao": memory.get("arrived_icao"),
         "arrivedAtEpoch": memory.get("arrived_at"),
         "estimatedDestinationIcao": estimate,
-        "lastSeenEpoch": memory.get("last_seen", now),
+        # 0, not `now`, when this aircraft has never once been confirmed —
+        # the client's FlightStatus.lastSeenEpoch treats 0 as "genuinely
+        # never seen" and hides the "Last seen" row entirely for it
+        # (PersonDetailScreen.kt: `if (flight.lastSeenEpoch > 0)`).
+        # memory.get("last_seen", now) used to default to *this pass's*
+        # timestamp when the key was never set, which silently reported
+        # "last seen just now" every single run for a plane that had never
+        # actually been detected — decreasing back toward "just now" each
+        # time the worker ran, looking exactly like a real, moving sighting
+        # instead of the "nothing ever found" it actually was.
+        "lastSeenEpoch": memory.get("last_seen", 0),
         "liveMapUrl": f"https://globe.adsbexchange.com/?icao={subject.icao_hex.lower()}",
         # Airport granularity only — see AirportStop in Models.kt for why.
         # Read off the open stop itself, not arrived_icao — arrived_icao is
@@ -969,7 +979,11 @@ def vessel_status(subject: Subject, prev: dict, ports, ais_cache: dict, now: int
         # client labels it as such; we don't clean it up into looking more
         # authoritative than it is.
         "selfReportedDestination": destination or None,
-        "lastSeenEpoch": memory.get("last_seen", now),
+        # Same fix as flight_status() — 0, not `now`, when never confirmed.
+        # See the comment there for why the old `now` default silently
+        # reported a fake, ever-decreasing "last seen" for a vessel that had
+        # never actually been heard on AIS.
+        "lastSeenEpoch": memory.get("last_seen", 0),
         "liveMapUrl": f"https://www.marinetraffic.com/en/ais/details/ships/mmsi:{subject.mmsi}",
         "currentPortUnlocode": (
             memory["stops"][-1]["unlocode"]
