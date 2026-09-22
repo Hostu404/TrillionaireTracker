@@ -19,7 +19,19 @@ android {
 
     buildTypes {
         release {
-            isMinifyEnabled = false
+            // R8 shrinking/obfuscation was off, meaning every release build
+            // shipped full debug-level class/method names and no dead-code
+            // removal — pure APK-size waste for a release artifact, and the
+            // proguard-rules.pro already in this project (the kotlinx.serialization
+            // keep rules) was written for exactly this being on. okhttp and
+            // coil both ship their own R8 consumer rules, so no extra keep
+            // rules are needed for either. Turning this on changes nothing
+            // about how the app looks or behaves — only its release binary —
+            // but it hasn't been verified against a real compiler in this
+            // pass, so build and smoke-test one release APK before shipping
+            // it, in case something needs an additional keep rule.
+            isMinifyEnabled = true
+            isShrinkResources = true
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"

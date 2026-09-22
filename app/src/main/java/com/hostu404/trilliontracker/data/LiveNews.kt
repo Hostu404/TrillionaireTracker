@@ -66,9 +66,31 @@ object GoogleNewsClient {
         SimpleDateFormat("EEE, dd MMM yyyy HH:mm:ss zzz", Locale.US)
     }
 
+    /**
+     * Hardened against XXE: this app has no reason to ever resolve a DOCTYPE,
+     * an external entity, or an external DTD from an RSS response, and a
+     * default [DocumentBuilderFactory] will happily do all three. That's a
+     * real (if narrow — this endpoint is HTTPS/cert-validated, so exploiting
+     * it needs the response itself compromised, not just observed) attack
+     * surface for free: a malicious/compromised response could otherwise
+     * read local files or trigger outbound requests from the device via a
+     * crafted `<!DOCTYPE>`/entity declaration. Every flag below is the
+     * standard OWASP-recommended lockdown for parsing untrusted XML on the
+     * JVM. Built once and reused rather than per-call — none of this
+     * configuration ever changes.
+     */
+    private val safeDocumentBuilderFactory: DocumentBuilderFactory = DocumentBuilderFactory.newInstance().apply {
+        setFeature("http://apache.org/xml/features/disallow-doctype-decl", true)
+        setFeature("http://xml.org/sax/features/external-general-entities", false)
+        setFeature("http://xml.org/sax/features/external-parameter-entities", false)
+        setFeature("http://apache.org/xml/features/nonvalidating/load-external-dtd", false)
+        isXIncludeAware = false
+        isExpandEntityReferences = false
+    }
+
     private fun parseRss(body: String, limit: Int): List<NewsItem> {
         return try {
-            val document = DocumentBuilderFactory.newInstance()
+            val document = safeDocumentBuilderFactory
                 .newDocumentBuilder()
                 .parse(InputSource(StringReader(body)))
             val items = document.getElementsByTagName("item")

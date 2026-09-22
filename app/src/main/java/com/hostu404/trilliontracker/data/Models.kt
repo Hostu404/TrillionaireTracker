@@ -321,11 +321,25 @@ data class VesselStatus(
     val currentPortUnlocode: String? = null,
     /**
      * Port stops over the trailing 7 days, newest first — see [AirportStop].
-     * No time-by-location donut for vessels yet (the flight one exists
-     * because it was asked for specifically); this can gain one the same
-     * way if it's wanted.
      */
-    val recentStops: List<PortStop> = emptyList()
+    val recentStops: List<PortStop> = emptyList(),
+    /**
+     * Server-side time-share aggregate, mirroring [FlightStatus.locationBreakdown]
+     * bucket-for-bucket ("UNDERWAY", "NO_SIGNAL", "UNKNOWN_PORT" in place of the
+     * flight sentinels). Not currently consumed client-side — same as the flight
+     * field, the UI rebuilds its own timeline segments from [recentStops] instead
+     * (see `buildTimelineSegments` in `PersonDetailScreen.kt`) so the strip and its
+     * legend can never drift out of sync with a second, server-computed total. Kept
+     * here for schema parity with the backend and in case a future consumer wants
+     * the raw aggregate without reconstructing it.
+     */
+    val locationBreakdown: List<LocationShare> = emptyList(),
+    /**
+     * How much of the trailing window is actually accounted for — see
+     * [FlightStatus.trackedSeconds]. This is the field the vessel "TIME BY
+     * LOCATION" card actually gates and sizes its window on.
+     */
+    val trackedSeconds: Long = 0L
 )
 
 @Serializable

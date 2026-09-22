@@ -29,6 +29,24 @@ import okhttp3.Response
  */
 class TrillionaireTrackerApp : Application(), ImageLoaderFactory {
 
+    override fun onCreate() {
+        super.onCreate()
+
+        // WorldGeo.countries() parses a ~125KB bundled JSON file once and
+        // caches it forever (see its own doc comment) — cheap over the
+        // process's whole lifetime, but the first-ever call used to happen
+        // synchronously inside `remember { }` on the main thread, right when
+        // someone's first flight/vessel detail screen composes. Doing that
+        // parse here instead, on a plain background thread before any screen
+        // needs it, means that first detail screen open just hits the
+        // already-warmed cache rather than paying for the parse itself. A
+        // detail screen opened before this finishes still works correctly —
+        // WorldGeo.countries() does its own synchronized/@Volatile caching,
+        // so a caller that gets there first just does the parse itself, same
+        // as before this existed.
+        Thread({ com.hostu404.trilliontracker.data.WorldGeo.countries(this) }, "warm-world-geo").start()
+    }
+
     override fun newImageLoader(): ImageLoader {
         val client = OkHttpClient.Builder()
             .addInterceptor(UserAgentInterceptor)

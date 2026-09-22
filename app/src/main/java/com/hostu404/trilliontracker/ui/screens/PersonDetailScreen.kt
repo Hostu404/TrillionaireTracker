@@ -294,6 +294,16 @@ fun PersonDetailScreen(
                 }
             }
 
+            person.vessel?.let { vessel ->
+                // Same gate, same reasoning as the flight card above — the
+                // maritime mirror of it, sharing the exact same [TimelineStrip]
+                // component rather than a second chart type (see
+                // buildVesselTimelineSegments's doc comment).
+                if (vessel.trackedSeconds > 0) {
+                    item { VesselTimeByLocationCard(vessel, nowSeconds, ports) }
+                }
+            }
+
             person.flight?.recentStops?.takeIf { it.isNotEmpty() }?.let { stops ->
                 item { LocationHistoryCard(stops, nowSeconds, airports) }
             }
@@ -1170,6 +1180,114 @@ private fun TimeByLocationCard(flight: FlightStatus, nowSeconds: Long, airports:
                 airports = airports
             ),
             windowStartEpoch = nowSeconds - flight.trackedSeconds,
+            windowEndEpoch = nowSeconds
+        )
+    }
+}
+
+/** The maritime mirror of [bucketLabel] — see [VesselStatus.locationBreakdown]'s sentinel names. */
+private fun vesselBucketLabel(bucket: String, ports: Map<String, PortInfo>): String = when (bucket) {
+    "UNDERWAY" -> "Underway"
+    "NO_SIGNAL" -> "No signal"
+    "UNKNOWN_PORT" -> "Unmatched port"
+    "OTHER" -> "Other ports"
+    else -> ports[bucket]?.label ?: bucket
+}
+
+/**
+ * The maritime mirror of [buildTimelineSegments] — same construction, same
+ * reasoning (rebuilt from [PortStop]s rather than from
+ * [VesselStatus.locationBreakdown] so the strip and its legend can't drift
+ * out of sync with a second, server-computed total), just swapping in
+ * [VesselState]/[PortStop]/[PortInfo] for their flight equivalents. "In
+ * flight" becomes "Underway" for the gaps between two confirmed port stops —
+ * a vessel that left one port and arrived at another necessarily spent that
+ * gap at sea, exactly as a plane between two airports necessarily spent it
+ * airborne.
+ */
+private fun buildVesselTimelineSegments(
+    recentStops: List<PortStop>,
+    vesselState: VesselState,
+    trackedSeconds: Long,
+    nowEpoch: Long,
+    ports: Map<String, PortInfo>
+): List<TimelineSegment> {
+    val windowStart = nowEpoch - trackedSeconds
+    val ordered = recentStops
+        .sortedBy { it.arrivedAtEpoch }
+        .filter { (it.departedAtEpoch ?: nowEpoch) > windowStart }
+
+    if (ordered.isEmpty()) {
+        return listOf(TimelineSegment(vesselBucketLabel("NO_SIGNAL", ports), windowStart, nowEpoch, TT.inkMuted))
+    }
+
+    val topCodes = ordered.map { it.unlocode }.distinct().sorted().take(5)
+    val colorByCode = topCodes.withIndex().associate { (i, code) -> code to TT.categorical[i] }
+    fun colorFor(code: String) = colorByCode[code] ?: TT.categorical.last()
+    fun labelFor(code: String) = vesselBucketLabel(if (colorByCode.containsKey(code)) code else "OTHER", ports)
+
+    val segments = mutableListOf<TimelineSegment>()
+    var cursor = windowStart
+
+    for (stop in ordered) {
+        val start = maxOf(stop.arrivedAtEpoch, windowStart)
+        val end = (stop.departedAtEpoch ?: nowEpoch).coerceAtMost(nowEpoch)
+        if (start > cursor) {
+            val isLeadingGap = segments.isEmpty()
+            val gapKey = if (isLeadingGap) "NO_SIGNAL" else "UNDERWAY"
+            val gapColor = if (isLeadingGap) TT.inkMuted else TT.warning
+            segments += TimelineSegment(vesselBucketLabel(gapKey, ports), cursor, start, gapColor)
+        }
+        if (end > start) {
+            segments += TimelineSegment(labelFor(stop.unlocode), start, end, colorFor(stop.unlocode))
+        }
+        cursor = maxOf(cursor, end)
+    }
+
+    if (cursor < nowEpoch) {
+        val trailingKey = if (vesselState == VesselState.UNDERWAY) "UNDERWAY" else "NO_SIGNAL"
+        val trailingColor = if (vesselState == VesselState.UNDERWAY) TT.warning else TT.inkMuted
+        segments += TimelineSegment(vesselBucketLabel(trailingKey, ports), cursor, nowEpoch, trailingColor)
+    }
+
+    return segments
+}
+
+/**
+ * Time by location for a vessel — the maritime mirror of [TimeByLocationCard],
+ * reusing the exact same [TimelineStrip] component rather than a second chart
+ * type, per the same "fit into the chart that's already there" request that
+ * shaped this whole feature. Only [buildVesselTimelineSegments] differs from
+ * the flight version, to work off [PortStop]/[PortInfo] instead.
+ */
+@Composable
+private fun VesselTimeByLocationCard(vessel: VesselStatus, nowSeconds: Long, ports: Map<String, PortInfo>) {
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .background(TT.surface, TT.panelShape(14.dp))
+            .border(1.dp, TT.border, TT.panelShape(14.dp))
+            .padding(14.dp)
+    ) {
+        SectionLabel(text = "TIME BY LOCATION")
+        Spacer(Modifier.height(2.dp))
+        Text(
+            text = "${Format.duration(vessel.trackedSeconds)} tracked",
+            color = TT.inkMuted,
+            fontSize = 11.sp
+        )
+
+        Spacer(Modifier.height(10.dp))
+
+        TimelineStrip(
+            segments = buildVesselTimelineSegments(
+                recentStops = vessel.recentStops,
+                vesselState = vessel.state,
+                trackedSeconds = vessel.trackedSeconds,
+                nowEpoch = nowSeconds,
+                ports = ports
+            ),
+            windowStartEpoch = nowSeconds - vessel.trackedSeconds,
             windowEndEpoch = nowSeconds
         )
     }
