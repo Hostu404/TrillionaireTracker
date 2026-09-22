@@ -4,14 +4,16 @@ import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
-import androidx.compose.animation.core.keyframes
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.composed
 import androidx.compose.ui.draw.drawWithContent
@@ -29,6 +31,7 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.hostu404.trilliontracker.ui.theme.TT
+import kotlinx.coroutines.delay
 
 /**
  * The corner-bracket framing from the reference HUD panels: four short "L"
@@ -161,15 +164,28 @@ fun Modifier.chromaticAberration(shift: Dp = 0.9.dp): Modifier = composed {
  * [PersonHeader] photo, deliberately meant to feel a bit wrong to look at
  * rather than merely "glassy." Two things make it read as sickly instead of
  * stylish: the shift is much wider than the base effect, and it never sits
- * still — an infinite [keyframes] loop throbs the split between a resting
- * and a peak width on an irregular beat (no easing, no clean sine), so the
- * fringing pulses like a bad signal rather than settling into a fixed,
- * ignorable frame. A small vertical creep on top of the usual horizontal
- * split (an eighth of the horizontal shift, opposite sign each side) breaks
- * the left/right symmetry a plain double-exposure would have, which is what
- * pushes it from "stylized" toward "off." Every other chromatic-aberration
- * use in the app stays on the calm, static default — this one is deliberate
- * main-character treatment for the person the app is needling.
+ * still — it steps between a resting and a peak width on an irregular beat
+ * (no easing, no clean sine), so the fringing pulses like a bad signal
+ * rather than settling into a fixed, ignorable frame. A small vertical creep
+ * on top of the usual horizontal split (an eighth of the horizontal shift,
+ * opposite sign each side) breaks the left/right symmetry a plain
+ * double-exposure would have, which is what pushes it from "stylized" toward
+ * "off." Every other chromatic-aberration use in the app stays on the calm,
+ * static default — this one is deliberate main-character treatment for the
+ * person the app is needling.
+ *
+ * **Stepped, not smoothly interpolated.** [drawWithContent] here does three
+ * full-photo [Canvas.saveLayer] passes (one per color channel) every time
+ * this recomposes — real, non-trivial GPU/compositing cost, and continuous
+ * for as long as this screen is open. The original version drove [shiftPx]
+ * with [animateFloat], which recomposes on every animation frame (up to
+ * 60/sec) to interpolate smoothly between keyframes — i.e. up to 180
+ * full-photo redraws a second just for this one effect. This version instead
+ * snaps directly between the same keyframe values on a plain timed loop
+ * (~8 steps/sec), cutting the redraw rate roughly 7-8x for the same shift
+ * range and beat pattern — and the harder jump-cut between values, if
+ * anything, reads slightly more "glitchy" than a buttery interpolation
+ * would, not less.
  */
 fun Modifier.sickeningChromaticAberration(
     baseShift: Dp = 2.4.dp,
@@ -177,27 +193,30 @@ fun Modifier.sickeningChromaticAberration(
 ): Modifier = composed {
     val basePx = with(LocalDensity.current) { baseShift.toPx() }
     val peakPx = with(LocalDensity.current) { peakShift.toPx() }
-    val infinite = rememberInfiniteTransition(label = "sicklyShift")
-    val shiftPx by infinite.animateFloat(
-        initialValue = basePx,
-        targetValue = basePx,
-        animationSpec = infiniteRepeatable(
-            animation = keyframes {
-                durationMillis = 2900
-                basePx at 0
-                peakPx at 260
-                basePx * 0.55f at 620
-                peakPx * 0.8f at 900
-                basePx at 1250
-                peakPx at 1650
-                basePx * 0.4f at 1950
-                peakPx * 0.65f at 2300
-                basePx at 2900
-            },
-            repeatMode = RepeatMode.Restart
-        ),
-        label = "shift"
-    )
+
+    // The exact same (value, time) beat as before, just stepped through
+    // directly instead of handed to animateFloat for smooth interpolation —
+    // see the doc comment above for why.
+    val keyframeValues = remember(basePx, peakPx) {
+        listOf(basePx, peakPx, basePx * 0.55f, peakPx * 0.8f, basePx, peakPx, basePx * 0.4f, peakPx * 0.65f, basePx)
+    }
+    val keyframeTimesMs = listOf(0, 260, 620, 900, 1250, 1650, 1950, 2300, 2900)
+    val stepMs = 120L
+
+    var shiftPx by remember { mutableFloatStateOf(basePx) }
+    LaunchedEffect(keyframeValues) {
+        val cycleMs = keyframeTimesMs.last()
+        var elapsed = 0
+        while (true) {
+            val t = elapsed % cycleMs
+            // Hold the most recently reached keyframe value rather than
+            // interpolating — the "stepped" look described above.
+            val idx = keyframeTimesMs.indexOfLast { it <= t }.coerceAtLeast(0)
+            shiftPx = keyframeValues[idx]
+            delay(stepMs)
+            elapsed += stepMs.toInt()
+        }
+    }
 
     val paint = remember { Paint() }
     drawWithContent {

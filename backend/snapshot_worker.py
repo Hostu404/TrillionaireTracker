@@ -10,21 +10,37 @@ when the user count does.
 Per pass, upstream:
     K quote requests       (K = distinct tracked tickers, one request each —
                             see [fetch_quotes] for why this isn't batched)
+    <=F FX requests        (F = distinct non-USD currencies among tracked
+                            tickers — see [fetch_fx_rate] — 0 once everyone
+                            tracked trades in USD)
     N ADS-B requests      (N = tracked aircraft, only when due)
     0 AIS requests        (vessel positions are read from ais_cache.json,
-                           written by the separate ais_listener.py process —
-                           see that file. This worker never talks to AIS.)
+                           written by ais_listener.py — see that file. This
+                           worker never talks to AIS.)
     M RSS requests        (M = tracked people, only every NEWS_EVERY passes)
     <=M Wikipedia requests (only every WIKI_EVERY_DAYS days per person — a
                             photo and article link barely ever change)
+    A one-time backfill (K' historical-range quote requests, K' = tickers
+    belonging to a person seen for the first time) seeds ~7 days of real
+    history immediately instead of a flat line that only starts filling in
+    from whenever the worker happened to first run for that person — see
+    [backfill_history]. Paid for once per person, ever, not per pass.
+
+Self-managing by design: every per-person time series this script keeps
+(price history, crossing history, flight/vessel stops and time-share
+samples) is trimmed to a rolling 7-day window every pass — see the "trim to
+7 days" comments below. Nothing here grows without bound, so state.json
+stays roughly flat-sized and the repo it's committed to doesn't grow
+without bound either.
 
 Stdlib only. No API keys. (ais_listener.py is the one exception — see its
-own docstring — it's a separate, optional, long-running process, not
-something this script imports or calls.)
+own docstring — it's a separate process this script never imports or calls.)
 """
 
 from __future__ import annotations
 
+import bisect
+import calendar
 import csv
 import json
 import math
@@ -36,6 +52,8 @@ import urllib.request
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass, field
 from typing import Any
+
+HISTORY_WINDOW_SECONDS = 7 * 86_400   # every self-managed series in this file trims to this
 
 USER_AGENT = "trillionaire-tracker/0.1 (+https://github.com/Hostu404)"
 TIMEOUT = 15
@@ -91,7 +109,7 @@ YAHOO_QUOTE_UA = (
 )
 
 
-def fetch_quotes(tickers: list[str]) -> dict[str, float]:
+def fetch_quotes(tickers: list[str]) -> dict[str, dict]:
     """
     One request per ticker against Yahoo Finance's unofficial chart
     endpoint (see the module-level comment above this function for why
@@ -101,11 +119,17 @@ def fetch_quotes(tickers: list[str]) -> dict[str, float]:
     ([YAHOO_QUOTE_UA]) instead of this module's usual [USER_AGENT]. Swap
     this function for a paid provider (Finnhub, Twelve Data) if you ever
     want a real SLA instead of an unofficial endpoint; nothing else changes.
+
+    Returns ticker -> {"price": float, "currency": str}. Yahoo covers
+    non-US exchanges too (e.g. "ITX.MC" for a Madrid-listed stock), and
+    those come back priced in their own local currency, not USD — see
+    [fetch_fx_rate] and its call site in [build_snapshot] for how that gets
+    converted before it ever reaches net_worth().
     """
     if not tickers:
         return {}
 
-    out: dict[str, float] = {}
+    out: dict[str, dict] = {}
     for ticker in tickers:
         url = (
             "https://query2.finance.yahoo.com/v8/finance/chart/"
@@ -113,8 +137,12 @@ def fetch_quotes(tickers: list[str]) -> dict[str, float]:
         )
         try:
             payload = get_json(url, headers={"User-Agent": YAHOO_QUOTE_UA})
-            price = payload["chart"]["result"][0]["meta"]["regularMarketPrice"]
-            out[ticker.upper()] = float(price)
+            meta = payload["chart"]["result"][0]["meta"]
+            price = meta["regularMarketPrice"]
+            out[ticker.upper()] = {
+                "price": float(price),
+                "currency": (meta.get("currency") or "USD").upper(),
+            }
         except Exception as exc:                      # noqa: BLE001
             print(f"[quotes] {ticker}: failed: {exc}", file=sys.stderr)
             continue
@@ -122,6 +150,162 @@ def fetch_quotes(tickers: list[str]) -> dict[str, float]:
     missing = [t for t in tickers if t.upper() not in out]
     if missing:
         print(f"[quotes] no price for {missing}", file=sys.stderr)
+    return out
+
+
+def fetch_fx_rate(currency: str) -> float | None:
+    """
+    USD per 1 unit of `currency`, via Yahoo's "<CUR>USD=X" pairs — same
+    endpoint and UA as [fetch_quotes], just a different symbol shape. USD
+    itself is free (rate 1.0, no request). Returns None on any failure, and
+    the caller treats that exactly like an unpriced ticker: skip the person
+    that pass rather than publish a number computed with a guessed rate.
+    """
+    if currency == "USD":
+        return 1.0
+    pair = f"{currency}USD=X"
+    url = (
+        "https://query2.finance.yahoo.com/v8/finance/chart/"
+        f"{urllib.parse.quote(pair)}?range=1d&interval=1d"
+    )
+    try:
+        payload = get_json(url, headers={"User-Agent": YAHOO_QUOTE_UA})
+        rate = payload["chart"]["result"][0]["meta"]["regularMarketPrice"]
+        return float(rate)
+    except Exception as exc:                          # noqa: BLE001
+        print(f"[fx] {pair}: failed: {exc}", file=sys.stderr)
+        return None
+
+
+def price_quotes_in_usd(raw: dict[str, dict]) -> dict[str, float]:
+    """
+    [fetch_quotes]'s ticker -> {"price","currency"} map, converted to a
+    plain ticker -> USD-price map — what net_worth() actually consumes.
+    Fetches each distinct non-USD currency's rate once per pass regardless
+    of how many tickers share it (e.g. two EUR-listed holdings cost one FX
+    request, not two). A ticker whose currency's rate can't be fetched is
+    left out entirely — net_worth() already treats a missing ticker as
+    "skip this person this pass", so a bad FX rate degrades the same
+    honest way a bad stock quote does, never as a silently wrong number.
+    """
+    currencies = {q["currency"] for q in raw.values()}
+    rates = {c: fetch_fx_rate(c) for c in currencies}
+
+    out: dict[str, float] = {}
+    for ticker, q in raw.items():
+        rate = rates.get(q["currency"])
+        if rate is None:
+            print(f"[fx] {ticker}: no {q['currency']}->USD rate, dropping quote", file=sys.stderr)
+            continue
+        out[ticker] = q["price"] * rate
+    return out
+
+
+def fetch_ticker_history(ticker: str, range_: str = "7d", interval: str = "15m") -> list[tuple[int, float]]:
+    """
+    Real historical (timestamp, close) pairs for one ticker over `range_`,
+    via the same Yahoo chart endpoint as [fetch_quotes] with a wider range
+    instead of "1d". Used only once per person — see [backfill_history] —
+    to seed real price history instead of a flat line. Best-effort: a
+    newly-IPO'd ticker or an unsupported symbol just comes back empty and
+    that person's history starts from nothing, same as before this existed.
+    """
+    url = (
+        "https://query2.finance.yahoo.com/v8/finance/chart/"
+        f"{urllib.parse.quote(ticker)}?range={range_}&interval={interval}"
+    )
+    try:
+        payload = get_json(url, headers={"User-Agent": YAHOO_QUOTE_UA})
+        result = payload["chart"]["result"][0]
+        timestamps = result.get("timestamp") or []
+        closes = ((result.get("indicators") or {}).get("quote") or [{}])[0].get("close") or []
+        return [
+            (int(t), float(c)) for t, c in zip(timestamps, closes) if c is not None
+        ]
+    except Exception as exc:                          # noqa: BLE001
+        print(f"[history] {ticker}: backfill failed: {exc}", file=sys.stderr)
+        return []
+
+
+def _nearest_by_time(series: list[tuple[int, float]], t: int) -> float | None:
+    """Value from `series` (sorted ascending by timestamp) closest to `t`."""
+    if not series:
+        return None
+    times = [s[0] for s in series]
+    i = bisect.bisect_left(times, t)
+    if i == 0:
+        return series[0][1]
+    if i == len(series):
+        return series[-1][1]
+    before, after = series[i - 1], series[i]
+    return before[1] if (t - before[0]) <= (after[0] - t) else after[1]
+
+
+def backfill_history(subject: Subject, now: int) -> list[dict]:
+    """
+    Seeds a brand-new person's price history with ~7 real days of it in one
+    shot, computed from each holding's own historical closes (converted to
+    USD via the current FX rate — good enough for a one-time backfill; a
+    currency's rate barely moves pass-to-pass, let alone day-to-day, so
+    this is a documented approximation, not a guess dressed up as one).
+    Without this, a person added today would show a flat line for a week
+    until real-time samples slowly filled the window in — exactly the "app
+    opens and it's already working" bar this project holds everything else
+    to (see the README's "Embedded Seed Snapshot").
+
+    Runs once, ever, per person (only when they're not already in
+    state["history"]) — a one-time cost, not a per-pass one.
+    """
+    if not subject.holdings:
+        # Pure private-stake/cash person: no public price series to backfill
+        # from. One honest starting point beats a fabricated week of them.
+        return []
+
+    per_ticker: dict[str, list[tuple[int, float]]] = {}
+    currencies: dict[str, str] = {}
+    for h in subject.holdings:
+        raw_ticker = h.ticker.upper()
+        series = fetch_ticker_history(raw_ticker)
+        if not series:
+            continue
+        per_ticker[raw_ticker] = series
+        # Reuse fetch_quotes' single-point call just for the currency tag —
+        # cheap (same endpoint, "1d" range) and avoids guessing a currency.
+        quote = fetch_quotes([raw_ticker]).get(raw_ticker)
+        currencies[raw_ticker] = (quote or {}).get("currency", "USD")
+
+    primary = subject.holdings[0].ticker.upper()
+    base = per_ticker.get(primary)
+    if not base:
+        return []
+
+    fx_cache: dict[str, float | None] = {}
+    out: list[dict] = []
+    for t, close in base:
+        total = 0.0
+        ok = True
+        for h in subject.holdings:
+            ticker = h.ticker.upper()
+            if ticker == primary:
+                price = close
+            else:
+                price = _nearest_by_time(per_ticker.get(ticker) or [], t)
+            if price is None:
+                ok = False
+                break
+            currency = currencies.get(ticker, "USD")
+            if currency not in fx_cache:
+                fx_cache[currency] = fetch_fx_rate(currency)
+            rate = fx_cache[currency]
+            if rate is None:
+                ok = False
+                break
+            total += h.shares * price * rate
+        if not ok:
+            continue
+        total += subject.private_stakes_usd + subject.cash_usd - subject.liabilities_usd
+        out.append({"t": t, "v": total})
+
     return out
 
 
@@ -359,7 +543,7 @@ def flight_status(subject: Subject, prev: dict, airports, now: int) -> dict | No
 
     # Trailing 7 days only. A stop still counts if it's still open, or was
     # active at any point inside the window.
-    cutoff = now - 7 * 86_400
+    cutoff = now - HISTORY_WINDOW_SECONDS
     memory["stops"] = [
         s for s in stops if s.get("departed") is None or s["departed"] >= cutoff
     ]
@@ -585,10 +769,53 @@ def vessel_status(subject: Subject, prev: dict, ports, ais_cache: dict, now: int
         if here and (was == "UNDERWAY" or (was is None and no_open_stop)):
             stops.append({"unlocode": here, "arrived": now, "departed": None})
 
-    cutoff = now - 7 * 86_400
+    cutoff = now - HISTORY_WINDOW_SECONDS
     memory["stops"] = [
         s for s in stops if s.get("departed") is None or s["departed"] >= cutoff
     ]
+
+    # --- time-share breakdown -------------------------------------------
+    # Exact mirror of flight_status()'s version — same field names
+    # (locationBreakdown/trackedSeconds), same bucketing/pruning/carry-
+    # forward logic, so the client's existing donut chart can plug a boat
+    # card into it the same way it already does a plane card, rather than
+    # needing a second chart. Only the bucket vocabulary is vessel-specific:
+    # a port UNLOCODE, "UNDERWAY" (the "not parked anywhere" bucket — the
+    # vessel equivalent of a flight's IN_FLIGHT), "UNKNOWN_PORT", or
+    # "NO_SIGNAL", instead of an airport ICAO / IN_FLIGHT / UNKNOWN_AIRPORT.
+    if state == "IN_PORT":
+        bucket = here or "UNKNOWN_PORT"
+    elif state == "UNDERWAY":
+        bucket = "UNDERWAY"
+    else:
+        bucket = "NO_SIGNAL"
+
+    samples: list[dict] = memory.setdefault("samples", [])
+    samples.append({"t": now, "bucket": bucket})
+
+    carry_bucket = None
+    for s in samples:
+        if s["t"] <= cutoff:
+            carry_bucket = s["bucket"]
+        else:
+            break
+    kept = [s for s in samples if s["t"] > cutoff]
+    if carry_bucket is not None:
+        kept.insert(0, {"t": cutoff, "bucket": carry_bucket})
+    memory["samples"] = kept
+
+    totals: dict[str, int] = {}
+    for i in range(len(kept)):
+        start = kept[i]["t"]
+        end = kept[i + 1]["t"] if i + 1 < len(kept) else now
+        totals[kept[i]["bucket"]] = totals.get(kept[i]["bucket"], 0) + max(0, end - start)
+
+    tracked_seconds = now - kept[0]["t"] if kept else 0
+    location_breakdown = sorted(
+        ({"bucket": k, "seconds": v} for k, v in totals.items() if v > 0),
+        key=lambda x: -x["seconds"],
+    )
+    # ----------------------------------------------------------------------
 
     if state != "UNKNOWN":
         memory["state"] = state
@@ -624,6 +851,10 @@ def vessel_status(subject: Subject, prev: dict, ports, ais_cache: dict, now: int
             }
             for s in reversed(memory["stops"])
         ],
+        "locationBreakdown": [
+            {"bucket": b["bucket"], "seconds": b["seconds"]} for b in location_breakdown
+        ],
+        "trackedSeconds": tracked_seconds,
     }
 
 
@@ -753,7 +984,8 @@ def save_state(state: dict) -> None:
     os.replace(tmp, STATE_PATH)
 
 
-CROSSING_HISTORY_LIMIT = 200   # exposed-in-snapshot cap; the internal list is never trimmed
+CROSSING_HISTORY_LIMIT = 200   # exposed-in-snapshot cap; the stored list is separately
+                               # trimmed to a 7-day window in build_snapshot(), see there
 
 
 def track_crossing(state: dict, subject: Subject, value: float, now: int) -> None:
@@ -810,7 +1042,7 @@ def build_snapshot() -> dict:
     passes = state["pass"]
 
     tickers = sorted({h.ticker.upper() for s in subjects for h in s.holdings})
-    prices = fetch_quotes(tickers)
+    prices = price_quotes_in_usd(fetch_quotes(tickers))
 
     airports = load_airports()
     airports_by_ident = {row["ident"]: row for row in airports}
@@ -839,14 +1071,31 @@ def build_snapshot() -> dict:
             print(f"[skip] {subject.id}: unpriced holding", file=sys.stderr)
             continue
 
-        series = history.get(subject.id, [])
-        series.append(value)
-        history[subject.id] = series[-48:]
+        series = history.get(subject.id)
+        if series is None:
+            series = backfill_history(subject, now)
+            if series:
+                print(f"[history] {subject.id}: backfilled {len(series)} points ({HISTORY_WINDOW_SECONDS // 86_400}d)")
+        prev_value = series[-1]["v"] if series else value
+        prev_t = series[-1]["t"] if series else now
+        series.append({"t": now, "v": value})
+        cutoff = now - HISTORY_WINDOW_SECONDS
+        series = [s for s in series if s["t"] >= cutoff]
+        history[subject.id] = series
 
-        prev_value = series[-2] if len(series) > 1 else value
-        opens.setdefault(subject.id, value)
+        if subject.id not in opens:
+            # Prefer the value nearest today's UTC midnight from whatever
+            # history we have (backfilled or accumulated) so day-over-day
+            # change is real from the very first pass of the day, instead
+            # of "$0 until tomorrow" just because the worker happened to
+            # start mid-day.
+            today_start = calendar.timegm(time.strptime(today, "%Y-%m-%d"))
+            opens[subject.id] = _nearest_by_time(
+                [(s["t"], s["v"]) for s in series], today_start
+            ) or value
         day_change = value - opens[subject.id]
-        drift = (value - prev_value) / float(POLL_SECONDS)
+        elapsed = max(1, now - prev_t)
+        drift = (value - prev_value) / float(elapsed)
 
         if passes % FLIGHT_EVERY == 0:
             flight = flight_status(subject, state.setdefault("flights", {}), airports, now)
@@ -892,6 +1141,9 @@ def build_snapshot() -> dict:
                     used_unlocodes.add(vessel[k])
             for stop in vessel.get("recentStops") or []:
                 used_unlocodes.add(stop["unlocode"])
+            for share in vessel.get("locationBreakdown") or []:
+                if share["bucket"] not in ("UNDERWAY", "NO_SIGNAL", "UNKNOWN_PORT", "OTHER"):
+                    used_unlocodes.add(share["bucket"])
 
         track_crossing(state, subject, value, now)
         if value >= THRESHOLD_USD and current_trillionaire is None:
@@ -908,7 +1160,12 @@ def build_snapshot() -> dict:
                 "netWorthUsd": value,
                 "driftPerSecondUsd": drift,
                 "dayChangeUsd": day_change,
-                "history": history[subject.id],
+                # Wire format stays a plain list of values, oldest to newest
+                # (unchanged from before this file added timestamps
+                # internally) — only the retention window changed, from the
+                # last 48 raw samples (~4h at this project's real 5-minute
+                # polling cadence) to a real rolling 7 days.
+                "history": [s["v"] for s in history[subject.id]],
                 "flight": flight,
                 "vessel": vessel,
                 "news": news,
@@ -919,6 +1176,31 @@ def build_snapshot() -> dict:
         )
 
     people.sort(key=lambda p: p["netWorthUsd"], reverse=True)
+
+    # Trim crossing_history to the same rolling 7-day window as everything
+    # else — a closed (non-ongoing) entry older than the window is dropped;
+    # an ongoing one is kept regardless of age, since it's live status, not
+    # just history. (This is the "internal list is never trimmed" gap the
+    # CROSSING_HISTORY_LIMIT comment used to admit to — the 200-item cap
+    # below only ever bounded what left this function, not what state.json
+    # accumulated forever.) crossing_tracking is rebuilt from the trimmed
+    # list rather than shifted, since a kept old-but-ongoing entry can sit
+    # before a dropped newer-but-closed one — index arithmetic would be
+    # wrong there, a fresh rebuild can't be.
+    trim_cutoff = now - HISTORY_WINDOW_SECONDS
+    stored_crossings = state.get("crossing_history", [])
+    kept_crossings = [
+        e for e in stored_crossings
+        if e.get("ongoing") or e.get("crossedAtEpoch", 0) >= trim_cutoff
+    ]
+    if len(kept_crossings) != len(stored_crossings):
+        state["crossing_history"] = kept_crossings
+        state["crossing_tracking"] = {
+            e["personId"]: {"over": True, "index": i}
+            for i, e in enumerate(kept_crossings)
+            if e.get("ongoing")
+        }
+
     save_state(state)
 
     airports_out = {

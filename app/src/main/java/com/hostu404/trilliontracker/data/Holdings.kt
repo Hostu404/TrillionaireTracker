@@ -1,12 +1,18 @@
 package com.hostu404.trilliontracker.data
 
 /**
- * One publicly-traded holding: a ticker and a share count. Mirrors
- * `backend/holdings.json`'s schema exactly — that file carries the actual
- * SEC-filing/proxy sourcing notes per person, re-check there before trusting
- * a figure below as current.
+ * One publicly-traded holding: a ticker, a share count, and the currency
+ * that ticker actually quotes in. Mirrors `backend/holdings.json`'s schema
+ * exactly — that file carries the actual SEC-filing/proxy sourcing notes per
+ * person, re-check there before trusting a figure below as current.
+ *
+ * [currency] defaults to "USD" since every holding here was until now
+ * US-listed. `ITX.MC` (Ortega/Inditex, Madrid) is the first exception —
+ * Yahoo quotes it in EUR, so [Holdings.liveNetWorth] has to convert it to
+ * USD via a live FX quote before it can be summed with anyone else's total,
+ * exactly mirroring `backend/snapshot_worker.py`'s `price_quotes_in_usd`.
  */
-data class Holding(val ticker: String, val shares: Double)
+data class Holding(val ticker: String, val shares: Double, val currency: String = "USD")
 
 /**
  * The subset of `backend/holdings.json`'s per-person record this client
@@ -49,13 +55,10 @@ data class LiveWealthAnchor(
  * counts drift with every 10b5-1 sale and every filing amendment, same
  * caveat that file's own sourcing notes carry.
  *
- * `dell` and `ortega` are deliberately absent: `backend/holdings.json` never
- * got a confidently-sourced share count for either of them, so there's
- * nothing honest to port. They simply never enter the live pool and keep
- * ticking off their static seed drift, exactly like every person here did
- * before this feature existed — the same "leave the gap visible, don't
- * guess" rule this project applies to bios, vessel AIS, and everything else
- * it can't back with a real source.
+ * `dell` and `ortega` now have confidently-sourced share counts in
+ * `backend/holdings.json` (Dell: DELL, 280,000,000 shares; Ortega: ITX.MC,
+ * 1,869,669,303 shares) and are ported below like everyone else. Ortega's
+ * `ITX.MC` trades in EUR — see [Holding.currency] and [liveNetWorth].
  */
 object Holdings {
     private val byId: Map<String, HoldingsInfo> = mapOf(
@@ -79,7 +82,11 @@ object Holdings {
         "ellison" to HoldingsInfo(holdings = listOf(Holding("ORCL", 1_160_000_000.0))),
         "page" to HoldingsInfo(holdings = listOf(Holding("GOOGL", 746_000_000.0))),
         "brin" to HoldingsInfo(holdings = listOf(Holding("GOOGL", 697_000_000.0))),
-        "ballmer" to HoldingsInfo(holdings = listOf(Holding("MSFT", 297_000_000.0)))
+        "ballmer" to HoldingsInfo(holdings = listOf(Holding("MSFT", 297_000_000.0))),
+        "dell" to HoldingsInfo(holdings = listOf(Holding("DELL", 280_000_000.0))),
+        "ortega" to HoldingsInfo(
+            holdings = listOf(Holding("ITX.MC", 1_869_669_303.0, currency = "EUR"))
+        )
     )
 
     fun forId(id: String): HoldingsInfo? = byId[id]
@@ -87,24 +94,52 @@ object Holdings {
     /** Every person this client can ever compute a live figure for. */
     val trackedIds: Set<String> get() = byId.keys
 
-    /** Every ticker any tracked person holds, deduped — one concurrent request per ticker per poll. */
-    val allTickers: List<String> = byId.values.flatMap { it.tickers }.distinct()
+    /**
+     * The Yahoo chart symbol for a live "<currency>USD=X" FX quote — `null`
+     * for USD itself, since a USD holding never needs converting. Yahoo's
+     * chart endpoint serves an FX pair the exact same way it serves a stock
+     * ticker, so [LiveQuoteClient.fetchQuotes] can fetch this alongside
+     * every other tracked symbol with no separate client needed — the same
+     * endpoint `backend/snapshot_worker.py`'s `fetch_fx_rate` calls
+     * server-side.
+     */
+    private fun fxTickerFor(currency: String): String? =
+        if (currency.equals("USD", ignoreCase = true)) null else "${currency.uppercase()}USD=X"
 
     /**
-     * Sum(shares × price) + private marks + cash - liabilities — mirrors
-     * `backend/snapshot_worker.py`'s `net_worth()` exactly, including its
-     * all-or-nothing rule: null the instant any one holding's ticker is
-     * missing from [prices], because a partial total would silently
-     * understate someone's wealth while still looking like a complete,
-     * trustworthy live number. A person with no [HoldingsInfo] at all also
-     * returns null here.
+     * Every ticker any tracked person holds, plus one FX pair per non-USD
+     * currency in use (currently just "EURUSD=X", for Ortega's ITX.MC),
+     * deduped — one concurrent request per symbol per poll.
+     */
+    val allTickers: List<String> = byId.values
+        .flatMap { info -> info.holdings.flatMap { h -> listOfNotNull(h.ticker, fxTickerFor(h.currency)) } }
+        .distinct()
+
+    /**
+     * Sum(shares × price-in-USD) + private marks + cash - liabilities —
+     * mirrors `backend/snapshot_worker.py`'s `net_worth()` (fed by
+     * `price_quotes_in_usd`) exactly, including its all-or-nothing rule:
+     * null the instant any one holding's ticker — or, for a non-USD holding,
+     * its FX rate — is missing from [prices], because a partial total would
+     * silently understate someone's wealth while still looking like a
+     * complete, trustworthy live number. An unconvertible FX rate is treated
+     * exactly like an unpriced ticker: skip the person that pass, never
+     * guess a rate. A person with no [HoldingsInfo] at all also returns null
+     * here.
      */
     fun liveNetWorth(id: String, prices: Map<String, Double>): Double? {
         val info = byId[id] ?: return null
         var total = 0.0
         for (h in info.holdings) {
-            val price = prices[h.ticker.uppercase()] ?: return null
-            total += h.shares * price
+            val rawPrice = prices[h.ticker.uppercase()] ?: return null
+            val usdPrice = if (h.currency.equals("USD", ignoreCase = true)) {
+                rawPrice
+            } else {
+                val fxTicker = fxTickerFor(h.currency) ?: return null
+                val rate = prices[fxTicker.uppercase()] ?: return null
+                rawPrice * rate
+            }
+            total += h.shares * usdPrice
         }
         return total + info.privateStakesUsd + info.cashUsd - info.liabilitiesUsd
     }

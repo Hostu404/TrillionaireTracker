@@ -21,10 +21,29 @@ ais_cache.json. snapshot_worker.py just reads that file — zero network
 calls of its own for AIS, same cost profile as everything else in this
 product regardless of how many app users there are.
 
-Run this once, continuously, under whatever process supervisor you use
-(systemd, supervisord, a tmux pane if you're just trying it out) — NOT on
-the same one-minute cron as snapshot_worker.py. It reconnects on its own if
-the connection drops.
+Two ways to run it
+------------------
+1. Continuously (the original design), under whatever process supervisor
+   you have — systemd, supervisord, a tmux pane if you're just trying it
+   out. It stays connected and reconnects on its own if the connection
+   drops. This is the most real-time option, but it needs *somewhere* that
+   stays on 24/7, which is the one piece of this project's architecture
+   that isn't free-by-default the way GitHub Actions makes flights/quotes/
+   news — a persistent WebSocket doesn't fit inside a scheduled job that
+   runs for a few seconds and exits, so this always needed a small
+   always-on box of your own (a spare machine, a $0-tier VPS, etc.) —
+   aisstream.io itself is free either way, it's the *hosting* that isn't.
+
+2. In a time-boxed burst — set AIS_BURST_SECONDS (e.g. "45") and this
+   process connects, subscribes, listens for that many seconds, saves
+   whatever it caught, and exits cleanly. That fits inside a GitHub
+   Actions job on the same free cron pattern as snapshot_worker.py (see
+   .github/workflows/ais.yml) — no server of your own required at all.
+   It'll catch fewer updates than a socket that's open around the clock
+   (only whatever those vessels transmit during the window), but it's
+   real live AIS, it's free, and it matches every other part of this
+   product's "no server to run yourself" design. Use mode 1 instead if you
+   already have somewhere to run it continuously and want tighter freshness.
 
 Requires
 --------
@@ -72,6 +91,11 @@ AIS_CACHE_PATH = os.path.join(HERE, "ais_cache.json")
 STREAM_URL = "wss://stream.aisstream.io/v0/stream"
 RECONNECT_BACKOFF_SECONDS = 10
 
+# Set AIS_BURST_SECONDS to run this as a one-shot burst instead of a
+# forever-running listener — see "Two ways to run it" above. 0 (unset)
+# keeps the original continuous behavior.
+BURST_SECONDS = int(os.environ.get("AIS_BURST_SECONDS", "0") or "0")
+
 
 def tracked_mmsis() -> list[str]:
     """Only subscribe to the vessels this app actually tracks — never the
@@ -96,6 +120,19 @@ def save_cache(cache: dict) -> None:
     with open(tmp, "w", encoding="utf-8") as fh:
         json.dump(cache, fh)
     os.replace(tmp, AIS_CACHE_PATH)
+
+
+def prune_cache(cache: dict, mmsis: list[str]) -> bool:
+    """
+    Self-managing, same spirit as snapshot_worker.py's 7-day trims: drop any
+    cached MMSI that's no longer in holdings.json (someone removed, or a
+    typo got fixed) so this file never carries entries for vessels the app
+    doesn't track anymore. Returns True if anything was actually dropped.
+    """
+    stale = [mmsi for mmsi in cache if mmsi not in mmsis]
+    for mmsi in stale:
+        del cache[mmsi]
+    return bool(stale)
 
 
 def apply_message(cache: dict, raw: dict) -> bool:
@@ -143,6 +180,36 @@ def apply_message(cache: dict, raw: dict) -> bool:
     return changed
 
 
+async def _listen_once(ws, mmsis: list[str], deadline: float | None) -> None:
+    """
+    Read messages off an already-subscribed socket, applying each one to the
+    cache as it arrives, until either the socket closes or `deadline`
+    (an event-loop `time.monotonic()` timestamp, or None for "forever")
+    passes. Shared by both run modes so the message-handling logic is
+    identical in burst and continuous mode — only how long this loop runs
+    differs.
+    """
+    while True:
+        if deadline is not None:
+            remaining = deadline - asyncio.get_running_loop().time()
+            if remaining <= 0:
+                return
+            try:
+                raw_message = await asyncio.wait_for(ws.recv(), timeout=remaining)
+            except asyncio.TimeoutError:
+                return
+        else:
+            raw_message = await ws.recv()
+
+        try:
+            parsed = json.loads(raw_message)
+        except json.JSONDecodeError:
+            continue
+        cache = load_cache()
+        if apply_message(cache, parsed):
+            save_cache(cache)
+
+
 async def run() -> None:
     api_key = os.environ.get("AISSTREAM_API_KEY")
     if not api_key:
@@ -159,24 +226,33 @@ async def run() -> None:
 
     print(f"[ais] tracking {len(mmsis)} vessel(s): {', '.join(mmsis)}")
 
+    if BURST_SECONDS > 0:
+        # One connect/listen/exit cycle — see "Two ways to run it" in the
+        # module docstring. Any connection failure here is fatal for this
+        # run (not retried): the next scheduled Actions run is the retry.
+        print(f"[ais] burst mode: listening for {BURST_SECONDS}s then exiting")
+        async with websockets.connect(STREAM_URL) as ws:
+            await ws.send(json.dumps({"APIKey": api_key, "FiltersShipMMSI": mmsis}))
+            deadline = asyncio.get_running_loop().time() + BURST_SECONDS
+            try:
+                await _listen_once(ws, mmsis, deadline)
+            except (websockets.exceptions.WebSocketException, OSError) as exc:
+                print(f"[ais] connection lost mid-burst ({exc}) — keeping "
+                      f"whatever was already cached", file=sys.stderr)
+
+        cache = load_cache()
+        if prune_cache(cache, mmsis):
+            save_cache(cache)
+        print("[ais] burst complete")
+        return
+
+    # Continuous mode: stay connected, reconnect forever on drop.
     while True:
         try:
             async with websockets.connect(STREAM_URL) as ws:
-                subscribe = {
-                    "APIKey": api_key,
-                    "FiltersShipMMSI": mmsis,
-                }
-                await ws.send(json.dumps(subscribe))
+                await ws.send(json.dumps({"APIKey": api_key, "FiltersShipMMSI": mmsis}))
                 print("[ais] subscribed, listening…")
-
-                async for raw_message in ws:
-                    try:
-                        parsed = json.loads(raw_message)
-                    except json.JSONDecodeError:
-                        continue
-                    cache = load_cache()
-                    if apply_message(cache, parsed):
-                        save_cache(cache)
+                await _listen_once(ws, mmsis, deadline=None)
 
         except (websockets.exceptions.WebSocketException, OSError) as exc:
             print(f"[ais] connection lost ({exc}), retrying in "

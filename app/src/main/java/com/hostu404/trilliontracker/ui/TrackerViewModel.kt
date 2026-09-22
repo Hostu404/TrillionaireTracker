@@ -28,9 +28,10 @@ data class TrackerUiState(
     /**
      * One entry per person [Holdings] currently has a fully-priced live
      * total for — see `TrackerViewModel.startLiveWealthPolling`. Anyone
-     * missing here (an unpriced holding this poll, or nobody-tracked at all,
-     * like `dell`/`ortega`) just falls back to the snapshot/seed projection
-     * in [projected], exactly as if this feature didn't exist for them.
+     * missing here (an unpriced holding this poll, an unconvertible FX rate
+     * for a non-USD holding like Ortega's `ITX.MC`, or nobody-tracked at
+     * all) just falls back to the snapshot/seed projection in [projected],
+     * exactly as if this feature didn't exist for them.
      */
     val liveWealthAnchors: Map<String, LiveWealthAnchor> = emptyMap()
 ) {
@@ -162,7 +163,8 @@ class TrackerViewModel(
      * fires one concurrent request per tracked ticker
      * ([Holdings.allTickers]) each interval — Yahoo Finance's quote
      * endpoint has no batch form, unlike the Stooq endpoint this used to
-     * call, but at 8 tracked symbols that's still cheap. `LiveQuoteClient.fetchQuotes`
+     * call, but at around a dozen tracked symbols (stock tickers plus one
+     * FX pair per non-USD currency in use) that's still cheap. `LiveQuoteClient.fetchQuotes`
      * runs before the first [delay] here too, same "fetch immediately on
      * open" shape as the flight tracker, so wealth starts updating the
      * moment the app launches rather than after a full interval first.

@@ -136,7 +136,50 @@
     "confidently linked to them in this research pass, so no mmsi for",
     "them. Vessel cards additionally require `ais_listener.py` running as",
     "its own always-on process with an AISSTREAM_API_KEY — see backend/",
-    "README’s vessels section — an mmsi here alone doesn’t light one up."
+    "README’s vessels section — an mmsi here alone doesn’t light one up.",
+    "",
+    "--- dell/ortega added 2026-09-22 — this closes the holdings-gap this",
+    "file's own notes above admitted to (SeedData.kt's bundled seed/demo",
+    "has always carried both of them; they were just never added here, so",
+    "the live backend only ever had 8 of the app's 10 tracked people to",
+    "poll for — this is why the app showed 8 rows, not a deliberate top-8",
+    "design choice).",
+    "",
+    "Both were previously treated as 'not SEC-registered, stay fully",
+    "manual' — wrong for Dell at least: Dell Technologies (NYSE: DELL) is",
+    "US-listed, and Michael Dell's wealth is overwhelmingly that stock, not",
+    "a private stake (Forbes, 2026-09-09: dell.holdings[DELL]: ~40% stake",
+    "https://www.forbes.com/sites/maryroeloffs/2026/09/09/michael-dell-hits-no-2-on-forbes-billionaire-list-for-first-time-passing-larry-page/",
+    "x ~700M shares outstanding (Eulerpool/GuruFocus, 2026) ~= 280,000,000.",
+    "DERIVED like zuckerberg/page/brin/ballmer above, not filing-sourced —",
+    "re-verify against a current Schedule 13D/G before trusting precisely.",
+    "No edgarCik yet: he almost certainly has an SEC reporting-owner CIK as",
+    "a Dell Technologies director/10%+ holder, just not looked up in this",
+    "pass — left unset rather than guess a number, same rule as everywhere",
+    "else in this file.",
+    "",
+    "ortega.holdings[ITX.MC]: Inditex genuinely is foreign and NOT",
+    "SEC-registered (Madrid-listed, Spanish company) — that part of the old",
+    "note was right — but Yahoo Finance still carries a live quote for it",
+    "under the Madrid ticker, so this is trackable the same way as every",
+    "US holding above, just non-USD. ~60% stake (Forbes, 2026-09-20:",
+    "https://www.forbes.com/profile/amancio-ortega/) x 3,116,115,505 shares",
+    "outstanding (companiesmarketcap.com, 2026) ~= 1,869,669,303. DERIVED,",
+    "same caveats as dell above. Priced in EUR — snapshot_worker.py converts",
+    "to USD via a live EURUSD=X rate each pass (see price_quotes_in_usd());",
+    "if that FX leg ever fails, ortega is skipped for the pass like any",
+    "other unpriced holding, never shown with a guessed rate.",
+    "",
+    "Neither has a mmsi/vesselName here yet: SeedData.kt's demo already has",
+    "a real one for ortega (yacht 'DRIZZLE', per the README's vessels",
+    "section) but the actual MMSI number lives only in that Kotlin file,",
+    "not copied here yet — add it once you've confirmed it there rather",
+    "than retyping it from memory. musk/dell/huang/ballmer have no yacht",
+    "confidently linked to them, same as the note above.",
+    "",
+    "birthDate/residence/bio sourced from Wikipedia (2026): dell — born",
+    "Houston, TX; Austin, TX residence. ortega — born Busdongo de Arbas,",
+    "Spain; A Coruña, Spain residence."
   ],
 
   "people": [
@@ -291,6 +334,37 @@
       "birthDate": "1956-03-24",
       "residence": "Hunts Point, WA",
       "bio": "Born in Detroit, Michigan. Graduated from Harvard with a degree in applied mathematics and economics in 1977, then left Stanford's MBA program in 1980 to join Microsoft as its 30th employee."
+    },
+    {
+      "id": "dell",
+      "name": "Michael Dell",
+      "company": "Dell Technologies",
+      "holdings": [
+        { "ticker": "DELL", "shares": 280000000 }
+      ],
+      "privateStakesUsd": 0,
+      "cashUsd": 0,
+      "liabilitiesUsd": 0,
+      "newsQuery": "Michael Dell",
+      "socialUrl": "https://x.com/MichaelDell",
+      "birthDate": "1965-02-23",
+      "residence": "Austin, TX",
+      "bio": "Born in Houston, Texas. Enrolled in pre-med coursework at the University of Texas at Austin in 1983, leaving at 19 after his dorm-room computer business turned a profit, to build what became Dell Technologies."
+    },
+    {
+      "id": "ortega",
+      "name": "Amancio Ortega",
+      "company": "Inditex",
+      "holdings": [
+        { "ticker": "ITX.MC", "shares": 1869669303 }
+      ],
+      "privateStakesUsd": 0,
+      "cashUsd": 0,
+      "liabilitiesUsd": 0,
+      "newsQuery": "Amancio Ortega",
+      "birthDate": "1936-03-28",
+      "residence": "A Coruña, Spain",
+      "bio": "Born in Busdongo de Arbas, Spain. Left school at 14 when his family moved to A Coruña, training as a shirtmaker's shop hand rather than attending university, before founding what became Inditex."
     }
   ]
 }
