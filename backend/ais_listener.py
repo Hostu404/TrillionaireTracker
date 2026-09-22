@@ -91,6 +91,20 @@ AIS_CACHE_PATH = os.path.join(HERE, "ais_cache.json")
 STREAM_URL = "wss://stream.aisstream.io/v0/stream"
 RECONNECT_BACKOFF_SECONDS = 10
 
+# aisstream.io's subscription message requires BoundingBoxes — it's not
+# optional, unlike FiltersShipMMSI (see their docs' subscription example).
+# This script went without one for its entire life, which is almost
+# certainly why every burst has come back with "no traffic heard" even for
+# vessels confirmed live elsewhere (VesselFinder/MarineTraffic) at the exact
+# same moment: an invalid/incomplete subscription talks to the socket fine
+# but the server has nothing to match messages against, so nothing is ever
+# sent back, silently. The tracked yachts roam globally (Mediterranean, US
+# East Coast, Pacific, wherever), so one box spanning the whole planet is
+# the right shape here — FiltersShipMMSI below still does the real
+# narrowing down to just the handful of MMSIs this app cares about, so a
+# world-sized box doesn't turn this into a firehose.
+WORLD_BOUNDING_BOX = [[[-90, -180], [90, 180]]]
+
 # Set AIS_BURST_SECONDS to run this as a one-shot burst instead of a
 # forever-running listener — see "Two ways to run it" above. 0 (unset)
 # keeps the original continuous behavior.
@@ -151,6 +165,16 @@ def apply_message(cache: dict, raw: dict) -> bool:
     meta = raw.get("MetaData") or {}
     mmsi = meta.get("MMSI")
     if not mmsi:
+        # A malformed/rejected subscription (the exact bug this file just
+        # had — a missing required BoundingBoxes field) shows up here as a
+        # frame with no MessageType/MetaData at all, which used to be
+        # swallowed completely silently, identical to any other harmless
+        # unrecognized frame. Surfacing it — once it's clearly not a normal
+        # position/static-data message — means a future protocol problem
+        # shows up in the Actions log instead of just quietly producing zero
+        # traffic forever with no clue why.
+        if msg_type is None:
+            print(f"[ais] unrecognized frame (no MessageType): {raw}", file=sys.stderr)
         return False
     mmsi = str(mmsi)
 
@@ -232,7 +256,12 @@ async def run() -> None:
         # run (not retried): the next scheduled Actions run is the retry.
         print(f"[ais] burst mode: listening for {BURST_SECONDS}s then exiting")
         async with websockets.connect(STREAM_URL) as ws:
-            await ws.send(json.dumps({"APIKey": api_key, "FiltersShipMMSI": mmsis}))
+            await ws.send(json.dumps({
+                "APIKey": api_key,
+                "BoundingBoxes": WORLD_BOUNDING_BOX,
+                "FiltersShipMMSI": mmsis,
+                "FilterMessageTypes": ["PositionReport"],
+            }))
             deadline = asyncio.get_running_loop().time() + BURST_SECONDS
             try:
                 await _listen_once(ws, mmsis, deadline)
@@ -250,7 +279,12 @@ async def run() -> None:
     while True:
         try:
             async with websockets.connect(STREAM_URL) as ws:
-                await ws.send(json.dumps({"APIKey": api_key, "FiltersShipMMSI": mmsis}))
+                await ws.send(json.dumps({
+                    "APIKey": api_key,
+                    "BoundingBoxes": WORLD_BOUNDING_BOX,
+                    "FiltersShipMMSI": mmsis,
+                    "FilterMessageTypes": ["PositionReport"],
+                }))
                 print("[ais] subscribed, listening…")
                 await _listen_once(ws, mmsis, deadline=None)
 
