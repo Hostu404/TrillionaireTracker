@@ -18,7 +18,7 @@ import kotlinx.coroutines.withContext
  * exactly as before when the app is backgrounded or the screen locks:
  * nothing about them is tied to whether anyone can actually see the result,
  * so a phone left with this app merely open in the background would poll
- * Stooq/OpenSky/RSS and re-tick the clock forever, for no one, burning
+ * Yahoo Finance/OpenSky/RSS and re-tick the clock forever, for no one, burning
  * battery and data. This makes every one of those loops park here instead
  * of doing real work while backgrounded, and resume the moment the app is
  * foregrounded again — immediately, not after a stale delay finishes.

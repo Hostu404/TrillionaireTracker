@@ -117,7 +117,26 @@
     "Finance, 2026, moving from Hawaii). page is left blank — reporting on",
     "where he currently lives was ambiguous enough in this pass (a Jan 2026",
     "Palo Alto Daily Post piece flagged as much) that guessing would break",
-    "this project's own rule against it."
+    "this project's own rule against it.",
+    "",
+    "icaoHex/tail/mmsi/vesselName pass, added 2026-09-22: this closes the",
+    "gap the note above admitted to — these are the same real, publicly",
+    "reported and cross-corroborated identities `SeedData.kt`’s bundled",
+    "demo has carried since the start (Mode S hexes/tails via multiple",
+    "independent aviation trackers plus 2022 press coverage; MMSIs via",
+    "MarineTraffic/VesselFinder/MyShipTracking), just never copied into",
+    "this file, so the live backend had nobody to actually poll ADS-B/AIS",
+    "for — every flight/vessel card was coming back empty regardless of",
+    "real air/sea activity. musk/bezos get real Mode S hexes (tailVerified",
+    "true); huang/ellison/zuckerberg/ballmer have a publicly reported tail",
+    "number too, but no confidently-sourced Mode S hex to go with it —",
+    "left unset rather than guessed, so those four still show no flight",
+    "card, honestly, same as before. bezos/ellison/page/brin/zuckerberg get",
+    "real MMSIs (vesselVerified true); musk/huang/ballmer have no yacht",
+    "confidently linked to them in this research pass, so no mmsi for",
+    "them. Vessel cards additionally require `ais_listener.py` running as",
+    "its own always-on process with an AISSTREAM_API_KEY — see backend/",
+    "README’s vessels section — an mmsi here alone doesn’t light one up."
   ],
 
   "people": [
@@ -133,13 +152,14 @@
       "privateStakesUsd": 0,
       "cashUsd": 0,
       "liabilitiesUsd": 0,
-      "icaoHex": null,
-      "tail": null,
-      "tailVerified": false,
+      "icaoHex": "a835af",
+      "tail": "N628TS",
+      "tailVerified": true,
       "newsQuery": "Elon Musk",
       "socialUrl": "https://x.com/elonmusk",
       "birthDate": "1971-06-28",
-      "residence": "Starbase, TX"
+      "residence": "Starbase, TX",
+      "bio": "Born in Pretoria, South Africa. Earned bachelor's degrees in physics and economics from the University of Pennsylvania (1997); left a Stanford PhD program in materials science after two days to co-found Zip2."
     },
     {
       "id": "huang",
@@ -156,16 +176,7 @@
       "socialUrl": "https://x.com/JensenHuang",
       "birthDate": "1963-02-17",
       "residence": "Los Altos Hills, CA",
-      "upcomingEvents": [
-        {
-          "title": "NVIDIA GTC Washington, D.C. keynote",
-          "venue": "Ronald Reagan Building and International Trade Center",
-          "city": "Washington, DC",
-          "startEpoch": 1796151600,
-          "url": "https://www.nvidia.com/gtc/dc/",
-          "source": "NVIDIA"
-        }
-      ]
+      "bio": "Born in Taipei, Taiwan. Earned a B.S. in electrical engineering from Oregon State University in 1984, then a master's from Stanford in 1992 while working at LSI Logic."
     },
     {
       "id": "bezos",
@@ -178,9 +189,16 @@
       "privateStakesUsd": 0,
       "cashUsd": 0,
       "liabilitiesUsd": 0,
+      "icaoHex": "aa3908",
+      "tail": "N758PB",
+      "tailVerified": true,
+      "mmsi": "319225400",
+      "vesselName": "KORU",
+      "vesselVerified": true,
       "newsQuery": "Jeff Bezos",
       "birthDate": "1964-01-12",
-      "residence": "Indian Creek Village, FL"
+      "residence": "Indian Creek Village, FL",
+      "bio": "Born in Albuquerque, New Mexico. Graduated summa cum laude from Princeton University in 1986 with a B.S.E. in electrical engineering and computer science."
     },
     {
       "id": "zuckerberg",
@@ -193,10 +211,14 @@
       "privateStakesUsd": 0,
       "cashUsd": 0,
       "liabilitiesUsd": 0,
+      "mmsi": "538072122",
+      "vesselName": "LAUNCHPAD",
+      "vesselVerified": true,
       "newsQuery": "Mark Zuckerberg",
       "socialUrl": "https://www.threads.com/@zuck",
       "birthDate": "1984-05-14",
-      "residence": "Palo Alto, CA"
+      "residence": "Palo Alto, CA",
+      "bio": "Born in White Plains, New York. Studied computer science at Harvard College, leaving in 2004 — sophomore year — to run Facebook full-time; Harvard awarded him an honorary degree in 2017."
     },
     {
       "id": "ellison",
@@ -209,9 +231,13 @@
       "privateStakesUsd": 0,
       "cashUsd": 0,
       "liabilitiesUsd": 0,
+      "mmsi": "319032600",
+      "vesselName": "MUSASHI",
+      "vesselVerified": true,
       "newsQuery": "Larry Ellison",
       "birthDate": "1944-08-17",
-      "residence": "Palm Beach, FL"
+      "residence": "Palm Beach, FL",
+      "bio": "Born in New York City, raised in Chicago. Attended the University of Illinois and later the University of Chicago, leaving school without a degree after one term studying physics and math."
     },
     {
       "id": "page",
@@ -224,7 +250,11 @@
       "privateStakesUsd": 0,
       "cashUsd": 0,
       "liabilitiesUsd": 0,
-      "newsQuery": "Larry Page"
+      "mmsi": "319833000",
+      "vesselName": "SENSES",
+      "vesselVerified": true,
+      "newsQuery": "Larry Page",
+      "bio": "Born in East Lansing, Michigan. Earned a B.S. in computer engineering from the University of Michigan, then a master's at Stanford — where he took a leave from the PhD program in 1998 to co-found Google."
     },
     {
       "id": "brin",
@@ -237,9 +267,13 @@
       "privateStakesUsd": 0,
       "cashUsd": 0,
       "liabilitiesUsd": 0,
+      "mmsi": "319296900",
+      "vesselName": "DRAGONFLY",
+      "vesselVerified": true,
       "newsQuery": "Sergey Brin",
       "birthDate": "1973-08-21",
-      "residence": "Los Altos Hills, CA"
+      "residence": "Los Altos Hills, CA",
+      "bio": "Born in Moscow, in what was then the Soviet Union. Studied computer science and mathematics at the University of Maryland, then took a leave from Stanford's computer science PhD program in 1995 to co-found Google."
     },
     {
       "id": "ballmer",
@@ -255,7 +289,8 @@
       "newsQuery": "Steve Ballmer",
       "socialUrl": "https://x.com/Steven_Ballmer",
       "birthDate": "1956-03-24",
-      "residence": "Hunts Point, WA"
+      "residence": "Hunts Point, WA",
+      "bio": "Born in Detroit, Michigan. Graduated from Harvard with a degree in applied mathematics and economics in 1977, then left Stanford's MBA program in 1980 to join Microsoft as its 30th employee."
     }
   ]
 }

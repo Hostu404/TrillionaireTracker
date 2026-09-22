@@ -53,7 +53,6 @@ import com.hostu404.trilliontracker.data.LiveFlightTracker
 import com.hostu404.trilliontracker.data.Person
 import com.hostu404.trilliontracker.data.PortInfo
 import com.hostu404.trilliontracker.data.PortStop
-import com.hostu404.trilliontracker.data.PublicEvent
 import com.hostu404.trilliontracker.data.VesselState
 import com.hostu404.trilliontracker.data.VesselStatus
 import com.hostu404.trilliontracker.data.WorldGeo
@@ -132,9 +131,6 @@ fun PersonDetailScreen(
         var mapFocusPin by remember { mutableStateOf<MapPin?>(null) }
         val mapFocusRequest = mapFocusPin?.let { MapFocusRequest(mapFocusToken, it) }
 
-        val upcomingEvents = remember(person.upcomingEvents, nowSeconds) {
-            person.upcomingEvents.filter { it.startEpoch >= nowSeconds }.sortedBy { it.startEpoch }
-        }
         val liveNews = rememberLiveNews(query = person.name, seedNews = person.news)
 
         // Only true for whoever FamilyHistoryRepository actually has a
@@ -154,7 +150,7 @@ fun PersonDetailScreen(
         // where they physically are right now (map) -> the raw
         // aircraft/vessel status feeding that map -> how that time actually
         // breaks down -> the raw stop history behind the breakdown ->
-        // what's next for them -> what's being written about them.
+        // what's being written about them.
         LazyColumn(
             contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 10.dp, bottom = 28.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp)
@@ -296,10 +292,6 @@ fun PersonDetailScreen(
 
             person.vessel?.recentStops?.takeIf { it.isNotEmpty() }?.let { stops ->
                 item { PortHistoryCard(stops, nowSeconds, ports) }
-            }
-
-            if (upcomingEvents.isNotEmpty()) {
-                item { PublicEventsCard(upcomingEvents, nowSeconds) }
             }
 
             if (liveNews.isNotEmpty()) {
@@ -1023,67 +1015,6 @@ private fun vesselMapPin(vessel: VesselStatus?, ports: Map<String, PortInfo>): M
         else -> "no current signal — last known position"
     }
     return MapPin(label = info.label, lat = lat, lon = lon, glyph = "⚓", isLive = isLive, caption = caption)
-}
-
-/**
- * Confirmed, officially-announced appearances only — never a forecast,
- * never a rumor, see [PublicEvent]. [events] arrives already filtered to
- * "starts in the future" and sorted soonest-first by the caller; an entry
- * simply stops appearing here the instant its start time passes, the same
- * auto-update idea as [Format.ageFrom] — no new snapshot needed for that.
- */
-@Composable
-private fun PublicEventsCard(events: List<PublicEvent>, nowSeconds: Long) {
-    val uriHandler = LocalUriHandler.current
-
-    Column(
-        Modifier
-            .fillMaxWidth()
-            .background(TT.surface, TT.panelShape(14.dp))
-            .border(1.dp, TT.border, TT.panelShape(14.dp))
-            .padding(14.dp)
-    ) {
-        SectionLabel(text = "UPCOMING EVENTS")
-
-        Spacer(Modifier.height(8.dp))
-
-        events.forEachIndexed { index, event ->
-            Column(
-                Modifier
-                    .fillMaxWidth()
-                    .clickable(enabled = event.url != null) {
-                        event.url?.let { uriHandler.openUri(it) }
-                    }
-            ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(
-                        text = event.title,
-                        color = TT.inkPrimary,
-                        fontSize = 14.sp,
-                        fontWeight = FontWeight.Medium,
-                        modifier = Modifier.weight(1f)
-                    )
-                    NoteChip(text = Format.untilLabel(event.startEpoch, nowSeconds), color = TT.accentCyan)
-                }
-                Spacer(Modifier.height(4.dp))
-                Text(
-                    text = Format.eventDateTimeLabel(event.startEpoch),
-                    color = TT.inkSecondary,
-                    fontSize = 12.sp
-                )
-                val place = listOfNotNull(event.venue, event.city).joinToString(" · ")
-                if (place.isNotEmpty()) {
-                    Spacer(Modifier.height(2.dp))
-                    Text(text = place, color = TT.inkMuted, fontSize = 12.sp)
-                }
-                Spacer(Modifier.height(2.dp))
-                Text(text = "via ${event.source}", color = TT.inkMuted, fontSize = 11.sp)
-            }
-            if (index != events.lastIndex) {
-                Spacer(Modifier.height(10.dp))
-            }
-        }
-    }
 }
 
 /** Sentinel buckets get a fixed status-style treatment; real airports get identity colors. */

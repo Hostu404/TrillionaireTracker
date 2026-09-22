@@ -38,18 +38,15 @@
     "in progress rather than a settled address — an omitted field reads",
     "honestly in the UI; a wrong one doesn't.",
     "",
-    "upcomingEvents is a list of { title, venue, city, startEpoch, url,",
-    "source }. There's no live feed for this — nothing broadcasts a",
-    "person's calendar the way ADS-B/AIS do a plane/boat — so every entry",
-    "is hand-curated, the same static-fact pattern as birthDate/residence.",
-    "startEpoch must come from the event's own organizer page (their",
-    "official site, not a news article about it or a third-party earnings",
-    "calendar's 'estimated' date) and only goes in once a date is actually",
-    "announced. source names who's publishing it ('NVIDIA', 'Meta'), not",
-    "whoever wrote an article about it. The client filters this list to",
-    "'starts in the future' and drops each entry the moment it passes, so",
-    "there's no need to prune old ones out by hand — but do prune an event",
-    "that gets cancelled or postponed, since nothing else will catch that.",
+    "bio is one or two plain sentences: birthplace and the last school or",
+    "university actually attended, whether or not they finished it — same",
+    "sourcing bar and same static-fact treatment as birthDate/residence,",
+    "just prose instead of a single value, because several of these people",
+    "left a LATER graduate program unfinished after completing an earlier",
+    "degree elsewhere, and prose is the only honest way to say 'last",
+    "attended' without it reading as 'graduated from.' Leave it out rather",
+    "than write one until it's actually been researched — a missing bio",
+    "card is honest, a copied-from-a-stale-Wikipedia-lead one isn't.",
     "",
     "edgarCik is that person's own SEC EDGAR reporting-owner CIK — NOT their",
     "company's issuer CIK, a different number (musk's is 1494730; Tesla's is",
@@ -95,17 +92,7 @@
       "liabilitiesUsd": 0,
       "newsQuery": "Jensen Huang",
       "birthDate": "1963-02-17",
-      "residence": "Los Altos Hills, CA",
-      "upcomingEvents": [
-        {
-          "title": "NVIDIA GTC Washington, D.C. keynote",
-          "venue": "Ronald Reagan Building and International Trade Center",
-          "city": "Washington, DC",
-          "startEpoch": 1796151600,
-          "url": "https://www.nvidia.com/gtc/dc/",
-          "source": "NVIDIA"
-        }
-      ]
+      "residence": "Los Altos Hills, CA"
     }
   ]
 }

@@ -5,7 +5,6 @@ import java.time.Duration
 import java.time.Instant
 import java.time.LocalDate
 import java.time.Period
-import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.time.format.DateTimeParseException
 import java.util.Locale
@@ -145,32 +144,4 @@ object Format {
             null
         }
 
-    private val EVENT_DATE: DateTimeFormatter = DateTimeFormatter.ofPattern("EEE, MMM d, yyyy", Locale.UK)
-    private val EVENT_TIME: DateTimeFormatter = DateTimeFormatter.ofPattern("h:mm a", Locale.UK)
-
-    /** "Wed, Sep 23, 2026 · 4:00 PM", in the device's own time zone. */
-    fun eventDateTimeLabel(epochSeconds: Long): String {
-        val zoned = Instant.ofEpochSecond(epochSeconds).atZone(ZoneId.systemDefault())
-        return "${zoned.format(EVENT_DATE)} · ${zoned.format(EVENT_TIME)}"
-    }
-
-    /**
-     * "in 3d" / "tomorrow" / "in 2w" — coarse on purpose, same "pretty
-     * basic" bar as the rest of this app's countdowns. Never negative:
-     * once an event's start time passes it's no longer "upcoming" at all,
-     * so the caller filters it out rather than asking this to describe a
-     * past event.
-     */
-    fun untilLabel(epochSeconds: Long, nowSeconds: Long): String {
-        val secondsUntil = epochSeconds - nowSeconds
-        if (secondsUntil <= 0L) return "happening now"
-        val days = secondsUntil / 86_400L
-        return when {
-            days == 0L -> "today"
-            days == 1L -> "tomorrow"
-            days < 14L -> "in ${days}d"
-            days < 60L -> "in ${days / 7}w"
-            else -> "in ${days / 30}mo"
-        }
-    }
 }

@@ -15,7 +15,7 @@ import javax.xml.parsers.DocumentBuilderFactory
 /**
  * Client-side port of `backend/snapshot_worker.py`'s `fetch_news()` — same
  * free, keyless source (Google News' public RSS search), same query shape,
- * same field mapping. Exists for the same reason [StooqClient] and
+ * same field mapping. Exists for the same reason [LiveQuoteClient] and
  * [LiveFlightTracker] do: this app runs entirely on [SeedData] with
  * [Config.SNAPSHOT_URL] blank, so there's no backend process polling RSS on
  * a schedule and baking the result into a [Snapshot] — a person's detail

@@ -10,7 +10,7 @@ import com.hostu404.trilliontracker.data.LiveWealthAnchor
 import com.hostu404.trilliontracker.data.NetWorthEngine
 import com.hostu404.trilliontracker.data.Person
 import com.hostu404.trilliontracker.data.Snapshot
-import com.hostu404.trilliontracker.data.StooqClient
+import com.hostu404.trilliontracker.data.LiveQuoteClient
 import com.hostu404.trilliontracker.data.TrackerRepository
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -158,10 +158,11 @@ class TrackerViewModel(
      * Runs for the whole app session (not just while a detail screen is
      * open) so every billionaire's figure — the tracker list, the hero
      * card, any detail screen — updates off real stock prices, not just
-     * whichever one person happens to be on screen. One batched Stooq
-     * request per interval covers every tracked ticker at once
-     * ([Holdings.allTickers]), so this stays a single small request no
-     * matter how many people end up priceable. `StooqClient.fetchQuotes`
+     * whichever one person happens to be on screen. [LiveQuoteClient]
+     * fires one concurrent request per tracked ticker
+     * ([Holdings.allTickers]) each interval — Yahoo Finance's quote
+     * endpoint has no batch form, unlike the Stooq endpoint this used to
+     * call, but at 8 tracked symbols that's still cheap. `LiveQuoteClient.fetchQuotes`
      * runs before the first [delay] here too, same "fetch immediately on
      * open" shape as the flight tracker, so wealth starts updating the
      * moment the app launches rather than after a full interval first.
@@ -171,7 +172,7 @@ class TrackerViewModel(
     private fun startLiveWealthPolling() = viewModelScope.launch {
         while (true) {
             awaitAppForeground()
-            val prices = StooqClient.fetchQuotes(Holdings.allTickers)
+            val prices = LiveQuoteClient.fetchQuotes(Holdings.allTickers)
             if (prices.isNotEmpty()) {
                 val nowEpochSeconds = System.currentTimeMillis() / 1000
                 _state.update { current ->

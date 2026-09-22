@@ -154,15 +154,7 @@ class Subject:
     wikipedia_title: str | None = None   # defaults to name.replace(" ", "_")
     birth_date: str | None = None   # "YYYY-MM-DD" — static fact, age is computed client-side
     residence: str | None = None    # city/region only, never an address — see holdings.example.json
-    # Officially-announced public appearances only — a keynote, an earnings
-    # call. No live feed exists for this (nothing broadcasts a person's
-    # calendar the way ADS-B/AIS do a plane/boat), so this is hand-curated
-    # here from holdings.json, the same static-fact pattern as birth_date/
-    # residence above — see holdings.example.json for the field shape and
-    # the sourcing bar ("confirmed by the organizer's own page", never a
-    # third-party forecast). Passed straight through to the client, which
-    # filters to "starts in the future" itself, same idea as age.
-    upcoming_events: list[dict] = field(default_factory=list)
+    bio: str | None = None          # birthplace + last school attended, one/two sentences — see holdings.example.json
 
 
 def net_worth(subject: Subject, prices: dict[str, float]) -> float | None:
@@ -741,7 +733,7 @@ def load_subjects() -> list[Subject]:
                 wikipedia_title=entry.get("wikipediaTitle") or entry["name"].replace(" ", "_"),
                 birth_date=entry.get("birthDate"),
                 residence=entry.get("residence"),
-                upcoming_events=entry.get("upcomingEvents", []),
+                bio=entry.get("bio"),
             )
         )
     return subjects
@@ -912,6 +904,7 @@ def build_snapshot() -> dict:
                 "company": subject.company,
                 "birthDate": subject.birth_date,
                 "residence": subject.residence,
+                "bio": subject.bio,
                 "netWorthUsd": value,
                 "driftPerSecondUsd": drift,
                 "dayChangeUsd": day_change,
@@ -919,7 +912,6 @@ def build_snapshot() -> dict:
                 "flight": flight,
                 "vessel": vessel,
                 "news": news,
-                "upcomingEvents": subject.upcoming_events,
                 "socialUrl": subject.social_url,
                 "wikipediaUrl": wiki_entry.get("wikipediaUrl"),
                 "photoUrl": wiki_entry.get("photoUrl"),
