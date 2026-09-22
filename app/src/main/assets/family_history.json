@@ -1,0 +1,794 @@
+{
+  "_comment": [
+    "Family History data — bundled locally, NOT part of the live snapshot",
+    "pipeline (holdings.json/snapshot_worker.py). Net-worth data changes",
+    "every poll and has to flow through that remote pipeline; this doesn't —",
+    "it's static, hand-researched narrative content, so it ships with the",
+    "app itself and gets updated on a release, not a poll.",
+    "",
+    "Same sourcing bar as the rest of this project: every fact needs a real",
+    "citation (sourceUrl/sourceLabel), and where the citable record runs",
+    "out, the generation carries a trailEndsNote saying so explicitly rather",
+    "than the entry just stopping with no explanation, or — worse — getting",
+    "filled in from an unsourced genealogy-site guess. A missing name",
+    "(name: null) is itself an honest fact when that's as far as the source",
+    "goes, not a placeholder to fill in later.",
+    "",
+    "'members' within a generation are the individuals sourcing actually",
+    "named for that generation — not a forced two-parents-per-generation",
+    "shape. 'globalContext' is optional per generation: the historical",
+    "backdrop that explains why the family moved, stayed, or the record",
+    "goes quiet, cited the same as any other fact.",
+    "",
+    "'familyBusiness' and 'worldSnapshot' (politics/music/technology of the",
+    "generation's era, independent of whether it touched the family",
+    "directly) are the same idea, just broader. Expect familyBusiness to be",
+    "null for almost everyone in this app — see the 'Known gaps'/README",
+    "note that this whole roster is first-generation wealth, so there's no",
+    "family business to document going backward, and that's the honest",
+    "answer, not a gap. worldSnapshot only gets filled in for a generation",
+    "with an actual fixable time window; Brin's Grandparents entry below",
+    "skips it entirely rather than guessing what decade its music/tech note",
+    "would even describe.",
+    "",
+    "brin: sourced from Sergey Brin's Wikipedia page (which cites the",
+    "family's own accounts) and Moment Magazine's 2007 long-form piece",
+    "'The Story of Sergey Brin' (momentmag.com/the-story-of-sergey-brin/),",
+    "which is itself built on interviews with Michael and Eugenia Brin —",
+    "the primary source underneath most of what's repeated elsewhere about",
+    "this family. Proof-of-concept entry for this feature — Brin was",
+    "chosen first because his family's story happens to be unusually well",
+    "documented on the record, not because the others are less interesting;",
+    "expect gaps and 'trail goes cold' notes to be the norm, not the",
+    "exception, once more people are added."
+  ],
+  "people": {
+    "brin": {
+      "generations": [
+        {
+          "label": "Parents",
+          "region": "Moscow, USSR → Vienna → Paris → Maryland, USA",
+          "members": [
+            {
+              "name": "Mikhail \"Michael\" Brin",
+              "relation": "Father",
+              "years": "b. c. 1946",
+              "facts": [
+                "Studied mathematics at Moscow State University despite Soviet-era discrimination — Jewish applicants sat entrance exams in separate rooms, bitterly nicknamed \"gas chambers,\" graded more harshly than everyone else's.",
+                "Wanted to become an astronomer, but Jews were effectively excluded from the physics department, so he moved to mathematics instead.",
+                "Worked as an economist for Gosplan, the Soviet central planning agency, then earned a doctorate (thesis defended in Kharkov, Ukraine).",
+                "At a 1977 international math conference in Warsaw, met Western colleagues for the first time and came home telling the family: \"We cannot stay here any more.\"",
+                "Applied for an exit visa in September 1978 and was fired from his job immediately afterward; translated technical books and taught himself computer programming to get by while the family waited.",
+                "After emigrating, arranged a temporary research post in Paris (at the Institut des Hautes Études Scientifiques) through his informal advisor Anatole Katok, then became a mathematics professor at the University of Maryland."
+              ],
+              "sourceUrl": "https://momentmag.com/the-story-of-sergey-brin/",
+              "sourceLabel": "Moment Magazine, \"The Story of Sergey Brin,\" 2007"
+            },
+            {
+              "name": "Eugenia \"Genia\" Brin",
+              "relation": "Mother",
+              "years": "1948–2024",
+              "facts": [
+                "Graduated from Moscow State University's School of Mechanics and Mathematics; worked at a research lab of the Soviet Oil and Gas Institute and said she was content there, with many friends — she was the reluctant one about leaving.",
+                "Said the decision to emigrate came down \"80/20\" to giving Sergey a future, not her own career: \"It took a while for me and his mother to agree.\"",
+                "Quit her job and lied about her circumstances to protect the family while they waited eight months for exit visas, fearing refusal like many other refuseniks.",
+                "After the family settled in Maryland, became a researcher at NASA's Goddard Space Flight Center."
+              ],
+              "sourceUrl": "https://momentmag.com/the-story-of-sergey-brin/",
+              "sourceLabel": "Moment Magazine, \"The Story of Sergey Brin,\" 2007"
+            }
+          ],
+          "globalContext": {
+            "text": "Soviet universities and top professions operated an unwritten quota system that kept Jewish applicants out of physics, graduate study, and advanced degrees regardless of merit — Michael Brin's own barred path into astronomy was typical, not exceptional. The Brins left during a narrow late-1970s window when the USSR, under Western diplomatic pressure tied to the 1975 Helsinki Accords, allowed a wave of Jewish emigration; they were, in Sergey's own family's telling, \"among the last Jews allowed to leave until the Gorbachev era\" nearly a decade later. Vienna was the standard transit point, where HIAS (the Hebrew Immigrant Aid Society) met and processed thousands of Eastern European Jewish emigrants, the Brins included.",
+            "sourceUrl": "https://momentmag.com/the-story-of-sergey-brin/",
+            "sourceLabel": "Moment Magazine, \"The Story of Sergey Brin,\" 2007"
+          },
+          "worldSnapshot": {
+            "politics": {
+              "text": "Just two months after the Brins landed in New York (October 25, 1979), the Soviet Union invaded Afghanistan on December 25, 1979 — ending the détente-era thaw that had made their exit possible in the first place, and closing the door behind them: broad Jewish emigration didn't reopen until Gorbachev's reforms nearly a decade later.",
+              "sourceUrl": "https://en.wikipedia.org/wiki/Soviet%E2%80%93Afghan_War",
+              "sourceLabel": "Wikipedia, \"Soviet–Afghan War\""
+            },
+            "music": {
+              "text": "Soviet music in these years split sharply into two worlds. Officially, Alla Pugacheva became the USSR's biggest pop star after winning the 1975 Golden Orpheus festival in Bulgaria with \"Arlekino\" (later selling some 14 million copies) and topping the charts again with her 1977 double LP \"Mirror of the Soul.\" Unofficially, bard-actor Vladimir Vysotsky — banned from Soviet TV and radio his entire life, releasing barely anything through the state's Melodiya label — was, by the mid-1970s, so widely copied hand-to-hand on cassette that his voice reportedly drifted out of open windows on any summer night; cosmonauts even carried his tapes into orbit.",
+              "sourceUrl": "https://en.wikipedia.org/wiki/Alla_Pugacheva",
+              "sourceLabel": "Wikipedia, \"Alla Pugacheva\"; Wikipedia, \"Vladimir Vysotsky\""
+            },
+            "technology": {
+              "text": "1977 — the same year Michael Brin decided at a Warsaw conference that the family had to leave — is remembered in computing history as the year of the \"1977 trinity\": the Commodore PET (January), Apple II (June), and TRS-80 (August) all launched within months of each other, the first machines to put a computer within reach of an ordinary household rather than a business or hobbyist workbench.",
+              "sourceUrl": "https://cybernews.com/editorial/the-1977-trinity-and-other-era-defining-pcs/",
+              "sourceLabel": "Cybernews, \"The 1977 Trinity and Other Era-Defining PCs\""
+            }
+          },
+          "beliefs": {
+            "text": "The Brins were Jewish but not observant — Sergey has said he “was raised Jewish, but is not religious.” The family kept some tradition rather than practice: they leaned on the Hebrew Immigrant Aid Society while in transit out of the USSR, and at his 2007 wedding to Anne Wojcicki, Sergey incorporated a chuppah and the breaking of a glass into an otherwise secular ceremony. Being Jewish is treated separately here from that identity's role in why the family left the USSR at all — see the note above.",
+            "sourceUrl": "https://en.wikipedia.org/wiki/Sergey_Brin",
+            "sourceLabel": "Wikipedia, “Sergey Brin”"
+          }
+        },
+        {
+          "label": "Grandparents",
+          "region": "Moscow, USSR",
+          "members": [
+            {
+              "name": null,
+              "relation": "Paternal grandfather",
+              "years": null,
+              "facts": [
+                "A PhD mathematician in Moscow — Sergey visited him there on a trip back in 1990.",
+                "Not named in available sourcing."
+              ],
+              "sourceUrl": "https://momentmag.com/the-story-of-sergey-brin/",
+              "sourceLabel": "Moment Magazine, \"The Story of Sergey Brin,\" 2007"
+            },
+            {
+              "name": "Maya",
+              "relation": "Paternal grandmother",
+              "years": null,
+              "facts": [
+                "Shared the family's 350-square-foot, three-room Moscow apartment with Michael, Genia, and Sergey.",
+                "Emigrated with the rest of the family to the United States in 1979."
+              ],
+              "sourceUrl": "https://momentmag.com/the-story-of-sergey-brin/",
+              "sourceLabel": "Moment Magazine, \"The Story of Sergey Brin,\" 2007"
+            }
+          ],
+          "globalContext": null,
+          "trailEndsNote": "No sourcing found for either grandparent's own parents, or for Eugenia's side of the family at all — the record available on the record stops here rather than being guessed further back."
+        }
+      ]
+    },
+    "bezos": {
+      "generations": [
+        {
+          "label": "Parents",
+          "region": "Havana, Cuba → Albuquerque, NM → Houston, TX, USA",
+          "members": [
+            {
+              "name": "Miguel \"Mike\" Bezos",
+              "relation": "Adoptive father — married Jeff's mother in 1968 and adopted him at age 4",
+              "years": "b. 1945",
+              "facts": [
+                "Fled Cuba alone at 16 as part of Operation Pedro Pan, the airlift that evacuated thousands of unaccompanied children after Fidel Castro's rise to power; his parents dropped him at Havana's airport and weren't permitted inside with him.",
+                "Departed Havana for Miami on July 21, 1962, carrying only three shirts, three pairs of pants, one pair of shoes, and a handmade jacket the family still keeps.",
+                "Spent time at a Florida refugee camp (Camp Matecumbe, alongside roughly 400 other Cuban children) before being sent to Wilmington, Delaware for high school — \"you do learn the language very quickly when you're immersed in it,\" he later said.",
+                "Won a scholarship to the University of Albuquerque, where he met Jacklyn Gise; earned a computer science degree in 1968 and spent the next 32 years as an engineer for Exxon in Houston.",
+                "Married Jacklyn in April 1968 and adopted 4-year-old Jeff shortly after, legally changing his surname from Jorgensen to Bezos."
+              ],
+              "sourceUrl": "https://en.wikipedia.org/wiki/Miguel_Bezos",
+              "sourceLabel": "Wikipedia, \"Miguel Bezos\""
+            },
+            {
+              "name": "Jacklyn Gise Bezos",
+              "relation": "Mother",
+              "years": null,
+              "facts": [
+                "Was a 17-year-old high school student in Albuquerque when Jeff was born on January 12, 1964; finished high school and then attended night school with her baby.",
+                "Divorced Jeff's biological father, Ted Jorgensen, in 1965 when Jeff was 17 months old, and the family cut off contact with him at her request.",
+                "Married Miguel Bezos in April 1968."
+              ],
+              "sourceUrl": "https://en.wikipedia.org/wiki/Jeff_Bezos",
+              "sourceLabel": "Wikipedia, \"Jeff Bezos\""
+            },
+            {
+              "name": "Ted Jorgensen",
+              "relation": "Biological father — no contact after Jeff was a toddler",
+              "years": "1944–2015",
+              "facts": [
+                "A Danish-American unicyclist from Chicago; was 19 when Jeff was born, and per Jeff's mother, \"struggled with alcohol and with his finances.\"",
+                "Agreed to discontinue contact after the 1965 divorce, and didn't learn his son had become Amazon's founder until journalist Brad Stone tracked him down in 2012 while researching a book — Jorgensen told him, \"I wasn't a good father or husband.\"",
+                "The two never met or spoke; Jorgensen said in a 2014 TV interview he wished he could apologize. He died in 2015, still estranged."
+              ],
+              "sourceUrl": "https://en.wikipedia.org/wiki/Ted_Jorgensen",
+              "sourceLabel": "Wikipedia, \"Ted Jorgensen\""
+            }
+          ],
+          "globalContext": {
+            "text": "Miguel's departure was part of Operation Pedro Pan (1960–1962), a secretive US–Catholic Church program that evacuated thousands of unaccompanied Cuban children, driven by parents' fears the new communist government would seize custody of their children. His own family lost its livelihood in the same upheaval — his father Salvador's lumber mill was nationalized after Castro's government turned toward Marxism-Leninism; see the Grandparents generation below.",
+            "sourceUrl": "https://en.wikipedia.org/wiki/Miguel_Bezos",
+            "sourceLabel": "Wikipedia, \"Miguel Bezos\""
+          },
+          "worldSnapshot": {
+            "politics": {
+              "text": "Just three months after Miguel's flight out of Havana, the Cuban Missile Crisis (October 16–28, 1962) brought the US and USSR closer to nuclear war than at any other point in the Cold War — centered on the same island he'd just left.",
+              "sourceUrl": "https://en.wikipedia.org/wiki/Cuban_Missile_Crisis",
+              "sourceLabel": "Wikipedia, \"Cuban Missile Crisis\""
+            },
+            "music": {
+              "text": "Cuba's biggest musical export, Celia Cruz, had already left two years earlier — flying out on July 15, 1960 for what she thought was a temporary engagement in Mexico, and never returning after Castro's government made clear she wasn't welcome back.",
+              "sourceUrl": "https://celiacruz.com/celia-cruz-a-cuban-biography-2/",
+              "sourceLabel": "CeliaCruz.com, official biography"
+            },
+            "technology": {
+              "text": "Two days after Miguel landed in Miami, Telstar 1 relayed the first live transatlantic television broadcast in history on July 23, 1962 — the moment satellite TV became real, beamed from a beach-ball-sized satellite into homes across two continents.",
+              "sourceUrl": "https://en.wikipedia.org/wiki/Telstar_1",
+              "sourceLabel": "Wikipedia, \"Telstar 1\""
+            }
+          },
+          "beliefs": {
+            "text": "Miguel Bezos's own faith runs through his story: Operation Pedro Pan was organized by the Catholic Church, and once in the US he lived at Casa de Sales in Wilmington, Delaware, a home for immigrant boys run by priests of the Oblates of St. Francis de Sales, then attended the Church-run Salesianum School there. Decades later, in 2021, he donated $12 million back to Salesianum to endow a scholarship for immigrants' children, named for Father James P. Byrne, the priest who had supervised the boys' residence.",
+            "sourceUrl": "https://www.americamagazine.org/faith/2021/06/23/jeff-bezos-father-miguel-amazon-12-million-catholic-school-240913/",
+            "sourceLabel": "America Magazine, “Immigrant father of Amazon founder Jeff Bezos donates $12 million to Catholic school”"
+          }
+        },
+        {
+          "label": "Grandparents",
+          "region": "Havana, Cuba → Albuquerque, NM, USA",
+          "members": [
+            {
+              "name": "Salvador Bezos",
+              "relation": "Paternal-adoptive grandfather (Miguel's father)",
+              "years": null,
+              "facts": [
+                "A Spanish immigrant to Cuba who owned a lumber mill.",
+                "The family initially supported Fidel Castro's revolution, but lost the lumber business once Castro's government turned toward Marxism-Leninism and nationalized private industry."
+              ],
+              "sourceUrl": "https://en.wikipedia.org/wiki/Miguel_Bezos",
+              "sourceLabel": "Wikipedia, \"Miguel Bezos\""
+            },
+            {
+              "name": null,
+              "relation": "Paternal-adoptive grandmother (Miguel's mother)",
+              "years": null,
+              "facts": [
+                "Worked part-time as a shopkeeper in Havana, selling fabric and infant clothing.",
+                "Not named in available sourcing."
+              ],
+              "sourceUrl": "https://en.wikipedia.org/wiki/Miguel_Bezos",
+              "sourceLabel": "Wikipedia, \"Miguel Bezos\""
+            },
+            {
+              "name": "Lawrence Preston Gise",
+              "relation": "Maternal grandfather (Jacklyn's father)",
+              "years": null,
+              "facts": [
+                "Regional director of the U.S. Atomic Energy Commission in Albuquerque.",
+                "Retired early to the family's ranch near Cotulla, Texas, which he expanded from 25,000 to 160,000 acres; Jeff spent childhood summers there working cattle and machinery."
+              ],
+              "sourceUrl": "https://en.wikipedia.org/wiki/Jeff_Bezos",
+              "sourceLabel": "Wikipedia, \"Jeff Bezos\""
+            }
+          ],
+          "globalContext": null,
+          "familyBusiness": {
+            "text": "Salvador Bezos's lumber mill in Havana — lost to nationalization after the Cuban Revolution, and not carried forward by any later generation.",
+            "sourceUrl": "https://en.wikipedia.org/wiki/Miguel_Bezos",
+            "sourceLabel": "Wikipedia, \"Miguel Bezos\""
+          },
+          "trailEndsNote": "No sourcing found for Salvador Bezos's or his wife's own parents, for Jacklyn's mother's side of the family, or for the Gise family before Lawrence Preston Gise — the record stops here rather than being guessed further back."
+        }
+      ]
+    },
+    "ellison": {
+      "generations": [
+        {
+          "label": "Parents",
+          "region": "Chicago, IL, USA",
+          "members": [
+            {
+              "name": "Louis Ellison",
+              "relation": "Adoptive father (Florence's uncle)",
+              "years": null,
+              "facts": [
+                "Emigrated to the United States from Russia in 1905; chose the surname “Ellison” to honor Ellis Island, his point of entry.",
+                "Built a fortune in Chicago real estate, then lost nearly all of it in the Great Depression; later worked as a government employee.",
+                "Raised Larry, in Larry's own recollection, with the repeated threat that he'd never amount to anything — Larry remembered him as austere, unsupportive, and distant."
+              ],
+              "sourceUrl": "https://jewishjournal.com/news/99817/larry-ellisons-billion-dollar-lesson/",
+              "sourceLabel": "Jewish Journal, “Larry Ellison's Billion-Dollar Lesson”; Wikipedia"
+            },
+            {
+              "name": "Lillian Spellman Ellison",
+              "relation": "Adoptive mother (Florence's aunt)",
+              "years": null,
+              "facts": [
+                "Louis Ellison's second wife; adopted nine-month-old Larry, her own great-nephew.",
+                "Remembered by Larry as warm and loving, in contrast to his adoptive father.",
+                "Died while Larry was a college sophomore; he skipped that term's final exams."
+              ],
+              "sourceUrl": "https://en.wikipedia.org/wiki/Larry_Ellison",
+              "sourceLabel": "Wikipedia, “Larry Ellison”; Jewish Journal"
+            },
+            {
+              "name": "Florence Spellman",
+              "relation": "Biological mother",
+              "years": null,
+              "facts": [
+                "Lillian's niece; gave up nine-month-old Larry to Lillian and Louis for adoption after he contracted pneumonia.",
+                "Larry did not meet her again until he was 48 years old."
+              ],
+              "sourceUrl": "https://en.wikipedia.org/wiki/Larry_Ellison",
+              "sourceLabel": "Wikipedia, “Larry Ellison”"
+            },
+            {
+              "name": null,
+              "relation": "Biological father",
+              "years": null,
+              "facts": [
+                "An Italian-American U.S. Army Air Corps pilot. Not named in available sourcing."
+              ],
+              "sourceUrl": "https://en.wikipedia.org/wiki/Larry_Ellison",
+              "sourceLabel": "Wikipedia, “Larry Ellison”"
+            }
+          ],
+          "globalContext": {
+            "text": "Louis Ellison's 1905 arrival came during the peak years of the great wave of Jewish emigration from the Russian Empire (roughly 1881–1914) — driven by pogroms and the legal restrictions of the Tsarist Pale of Settlement — that brought roughly two million Jews to the United States, many settling, as Louis did, in cities like Chicago and New York.",
+            "sourceUrl": "https://en.wikipedia.org/wiki/Larry_Ellison",
+            "sourceLabel": "Wikipedia, “Larry Ellison”"
+          },
+          "worldSnapshot": {
+            "politics": {
+              "text": "Larry was born in August 1944 and given up for adoption around nine months later, in early-to-mid 1945 — the closing months of World War II in both Europe (VE Day, May 8, 1945) and the Pacific.",
+              "sourceUrl": "https://en.wikipedia.org/wiki/Victory_in_Europe_Day",
+              "sourceLabel": "Wikipedia, “Victory in Europe Day”"
+            },
+            "music": {
+              "text": "Bandleader Glenn Miller, the most popular musician in America, vanished over the English Channel on a flight to Paris on December 15, 1944 — his disappearance never solved.",
+              "sourceUrl": "https://www.history.com/this-day-in-history/december-15/legendary-bandleader-glenn-miller-disappears-over-the-english-channel",
+              "sourceLabel": "History.com, “Glenn Miller Disappears Over the English Channel”"
+            },
+            "technology": {
+              "text": "The Manhattan Project detonated the first atomic bomb at the Trinity test site in New Mexico on July 16, 1945, opening the nuclear age weeks before Larry's first birthday.",
+              "sourceUrl": "https://en.wikipedia.org/wiki/Trinity_(nuclear_test)",
+              "sourceLabel": "Wikipedia, “Trinity (nuclear test)”"
+            }
+          },
+          "trailEndsNote": "Louis Ellison's own parents in Russia are unnamed and undocumented in available sourcing, as is anything more about Florence Spellman's own family or the unnamed Army Air Corps pilot — the trail stops with the generation above.",
+          "beliefs": {
+            "text": "The Ellison/Spellman family's Jewish identity runs through Larry's origin story on both sides: Louis Ellison's own 1905 emigration was part of the era's mass Jewish flight from the Russian Empire (see the note above), and Lillian and Florence Spellman's shared family were themselves part of that same Jewish immigrant community in Chicago. Available sourcing describes the family's Jewish background but not their level of religious observance.",
+            "sourceUrl": "https://jewishjournal.com/news/99817/larry-ellisons-billion-dollar-lesson/",
+            "sourceLabel": "Jewish Journal, “Larry Ellison's Billion-Dollar Lesson”"
+          }
+        }
+      ]
+    },
+    "huang": {
+      "generations": [
+        {
+          "label": "Parents",
+          "region": "Tainan, Taiwan → Kentucky → Beaverton, Oregon, USA",
+          "members": [
+            {
+              "name": "Huang Hsing-tai",
+              "relation": "Father",
+              "years": null,
+              "facts": [
+                "A chemical engineer at an oil refinery in Taiwan.",
+                "Traveled to New York City in the late 1960s for professional training with an air conditioning company; came home resolved to send his two sons to the United States.",
+                "Sold nearly all the family's possessions to afford tuition once the boys were (mistakenly) enrolled at what the family believed was a prestigious Kentucky boarding school.",
+                "Moved the rest of the family to the US two years later, settling in Beaverton, Oregon, after which the brothers left the Kentucky school to live with their parents again."
+              ],
+              "sourceUrl": "https://en.wikipedia.org/wiki/Jensen_Huang",
+              "sourceLabel": "Wikipedia, “Jensen Huang”"
+            },
+            {
+              "name": "Lo Tsai-hsiu",
+              "relation": "Mother",
+              "years": null,
+              "facts": [
+                "A schoolteacher in Taiwan.",
+                "A native Taiwanese Hokkien speaker, like her husband, in what the family itself has described as a middle-class household."
+              ],
+              "sourceUrl": "https://en.wikipedia.org/wiki/Jensen_Huang",
+              "sourceLabel": "Wikipedia, “Jensen Huang”"
+            }
+          ],
+          "globalContext": {
+            "text": "Taiwan's international position was collapsing at exactly this time: the Republic of China lost its United Nations seat to the People's Republic of China in October 1971, part of a decade that ended with the US formally switching diplomatic recognition to Beijing in 1979. For a middle-class Taiwanese family in the early 1970s, sending children abroad for their education reflected real uncertainty about the island's future, not just ambition.",
+            "sourceUrl": "https://en.wikipedia.org/wiki/United_Nations_General_Assembly_Resolution_2758_(XXVI)",
+            "sourceLabel": "Wikipedia, “United Nations General Assembly Resolution 2758”"
+          },
+          "worldSnapshot": {
+            "politics": {
+              "text": "1973, the year Jensen arrived in the US, was also the year of the global oil crisis: OPEC's October 1973 embargo, following the Yom Kippur War, quadrupled oil prices and triggered recessions across the industrialized world.",
+              "sourceUrl": "https://en.wikipedia.org/wiki/1973_oil_crisis",
+              "sourceLabel": "Wikipedia, “1973 oil crisis”"
+            },
+            "music": {
+              "text": "Taiwanese singer Teresa Teng, already a star at home since 1968, expanded into the Japanese market in 1973 — the same year Jensen left Taiwan — on her way to becoming one of the best-selling and most influential singers in Asian pop history.",
+              "sourceUrl": "https://en.wikipedia.org/wiki/Teresa_Teng",
+              "sourceLabel": "Wikipedia, “Teresa Teng”"
+            },
+            "technology": {
+              "text": "Xerox's Palo Alto Research Center introduced the Alto in 1973 — widely regarded as the first computer built around a graphical interface and a mouse, decades before either was standard.",
+              "sourceUrl": "https://en.wikipedia.org/wiki/Xerox_Alto",
+              "sourceLabel": "Wikipedia, “Xerox Alto”"
+            }
+          },
+          "trailEndsNote": "No grandparents are named or described in available sourcing on either side of the family — the trail stops with Jensen's own parents."
+        }
+      ]
+    },
+    "zuckerberg": {
+      "generations": [
+        {
+          "label": "Parents",
+          "region": "White Plains → Dobbs Ferry, NY, USA",
+          "members": [
+            {
+              "name": "Edward Zuckerberg",
+              "relation": "Father",
+              "years": null,
+              "facts": [
+                "A dentist who ran his own practice, Dobbs Ferry Dental, out of the family's home.",
+                "Filled the house with early computers and taught Mark to code as a child, including building him a custom instant-messaging program he called \"ZuckNet\" for the family and his dental office."
+              ],
+              "sourceUrl": "https://www.scmp.com/magazines/style/entertainment/article/3305831/who-are-mark-zuckerbergs-parents-edward-and-karen-meta-boss-dentist-dad-filled-family-home-computers",
+              "sourceLabel": "South China Morning Post, “Who are Mark Zuckerberg’s parents, Edward and Karen?”"
+            },
+            {
+              "name": "Karen Kempner",
+              "relation": "Mother",
+              "years": null,
+              "facts": [
+                "A psychiatrist who gave up her practice to raise Mark and his three sisters."
+              ],
+              "sourceUrl": "https://www.scmp.com/magazines/style/entertainment/article/3305831/who-are-mark-zuckerbergs-parents-edward-and-karen-meta-boss-dentist-dad-filled-family-home-computers",
+              "sourceLabel": "South China Morning Post, “Who are Mark Zuckerberg’s parents, Edward and Karen?”"
+            }
+          ],
+          "globalContext": {
+            "text": "Mark has said of the generation above his parents: “My great grandparents came from Germany, Austria, and Poland” — part of the same broad wave of Central European Jewish emigration to the US that also runs through Sergey Brin's and Larry Ellison's family histories in this app.",
+            "sourceUrl": "https://en.wikipedia.org/wiki/Mark_Zuckerberg",
+            "sourceLabel": "Wikipedia, “Mark Zuckerberg”"
+          },
+          "worldSnapshot": {
+            "politics": null,
+            "music": {
+              "text": "Mark was born May 14, 1984, less than three months after Michael Jackson's “Thriller” swept the Grammy Awards on February 28, 1984, winning a record eight awards including Album of the Year.",
+              "sourceUrl": "https://en.wikipedia.org/wiki/26th_Annual_Grammy_Awards",
+              "sourceLabel": "Wikipedia, “26th Annual Grammy Awards”"
+            },
+            "technology": {
+              "text": "Apple launched the original Macintosh on January 24, 1984, months before Mark was born — the machine that popularized the graphical, mouse-driven personal computer he'd grow up building software on.",
+              "sourceUrl": "https://en.wikipedia.org/wiki/Macintosh_128K",
+              "sourceLabel": "Wikipedia, “Macintosh 128K”"
+            }
+          },
+          "trailEndsNote": "No names are documented in reliable sourcing for Edward's or Karen's own parents — only Mark's own general statement about his great-grandparents' countries of origin. The record stops there rather than guessing at names.",
+          "beliefs": {
+            "text": "Mark and his three sisters were raised in a Reform Jewish household in Dobbs Ferry, New York.",
+            "sourceUrl": "https://en.wikipedia.org/wiki/Mark_Zuckerberg",
+            "sourceLabel": "Wikipedia, “Mark Zuckerberg”"
+          }
+        }
+      ]
+    },
+    "page": {
+      "generations": [
+        {
+          "label": "Parents",
+          "region": "East Lansing, MI, USA",
+          "members": [
+            {
+              "name": "Carl Victor Page Sr.",
+              "relation": "Father",
+              "years": null,
+              "facts": [
+                "Earned a PhD in computer science from the University of Michigan and was, in BBC reporter Will Smale's words, “a pioneer in computer science and artificial intelligence.”",
+                "Taught computer science at Michigan State University; came from a Protestant family background."
+              ],
+              "sourceUrl": "https://en.wikipedia.org/wiki/Larry_Page",
+              "sourceLabel": "Wikipedia, “Larry Page”"
+            },
+            {
+              "name": "Gloria Page",
+              "relation": "Mother",
+              "years": null,
+              "facts": [
+                "Taught computer programming at Michigan State University's Lyman Briggs College.",
+                "Came from a Jewish family; her own father later emigrated to Israel. The household Larry grew up in was secular despite that background."
+              ],
+              "sourceUrl": "https://en.wikipedia.org/wiki/Larry_Page",
+              "sourceLabel": "Wikipedia, “Larry Page”"
+            }
+          ],
+          "globalContext": null,
+          "worldSnapshot": {
+            "politics": {
+              "text": "Larry was born March 26, 1973; three days later, on March 29, 1973, the last U.S. combat troops departed South Vietnam, ending direct American military involvement in the Vietnam War.",
+              "sourceUrl": "https://www.history.com/this-day-in-history/march-29/u-s-withdraws-from-vietnam",
+              "sourceLabel": "History.com, “U.S. troops withdraw from Vietnam”"
+            },
+            "music": {
+              "text": "Pink Floyd released “The Dark Side of the Moon” on March 1, 1973, three and a half weeks before Larry was born — it would go on to spend a record-setting 741 weeks on the Billboard album chart.",
+              "sourceUrl": "https://en.wikipedia.org/wiki/The_Dark_Side_of_the_Moon",
+              "sourceLabel": "Wikipedia, “The Dark Side of the Moon”"
+            },
+            "technology": {
+              "text": "Xerox PARC researcher Robert Metcalfe circulated the internal memo proposing “Ethernet” on May 22, 1973 — the local-network technology that would later carry traffic to Google's own servers.",
+              "sourceUrl": "https://www.computerhistory.org/tdih/may/22/",
+              "sourceLabel": "Computer History Museum, “Xerox Researcher Proposes ‘Ethernet’”"
+            }
+          },
+          "trailEndsNote": "No reliable sourcing was found describing either set of Larry's grandparents beyond the bare facts above (a Protestant paternal family; a maternal grandfather who emigrated to Israel) — an earlier, unverified claim about a Ford-autoworker grandfather was checked against available sources and dropped rather than repeated without a citation.",
+          "beliefs": {
+            "text": "Larry's parents came from different religious backgrounds that both receded into the household he actually grew up in: his father's family was Protestant, and his mother Gloria was raised Jewish, with her own father eventually emigrating to Israel — but per available sourcing, Larry's own upbringing was secular rather than shaped by either tradition.",
+            "sourceUrl": "https://en.wikipedia.org/wiki/Larry_Page",
+            "sourceLabel": "Wikipedia, “Larry Page”"
+          }
+        }
+      ]
+    },
+    "ballmer": {
+      "generations": [
+        {
+          "label": "Parents",
+          "region": "Zuchwil, Switzerland → Detroit, MI, USA",
+          "members": [
+            {
+              "name": "Frederic Henry Ballmer",
+              "relation": "Father",
+              "years": "1923–2000",
+              "facts": [
+                "Emigrated to the United States from Zuchwil, Switzerland in 1948.",
+                "Worked as a manager at the Ford Motor Company in Detroit."
+              ],
+              "sourceUrl": "https://en.wikipedia.org/wiki/Steve_Ballmer",
+              "sourceLabel": "Wikipedia, “Steve Ballmer”"
+            },
+            {
+              "name": "Beatrice Dworkin",
+              "relation": "Mother",
+              "years": "1920–1997",
+              "facts": [
+                "Jewish; born into a family that owned a Detroit auto parts business (see Grandparents below).",
+                "A second cousin of actress and comedian Gilda Radner."
+              ],
+              "sourceUrl": "https://www.ebsco.com/research-starters/biography/steve-ballmer",
+              "sourceLabel": "EBSCO Research Starters, “Steve Ballmer”"
+            }
+          ],
+          "globalContext": {
+            "text": "No specific reason for Frederic Ballmer's 1948 emigration from Switzerland to the US is documented in available sourcing.",
+            "sourceUrl": "https://en.wikipedia.org/wiki/Steve_Ballmer",
+            "sourceLabel": "Wikipedia, “Steve Ballmer”"
+          },
+          "worldSnapshot": {
+            "politics": {
+              "text": "Steve was born March 24, 1956; three months later, on June 29, 1956, President Eisenhower signed the Federal-Aid Highway Act, launching the Interstate Highway System — the biggest public works project in US history at the time, and a direct driver of demand for the cars his father's employer, Ford, built.",
+              "sourceUrl": "https://www.historylink.org/File/4030",
+              "sourceLabel": "HistoryLink.org, “Eisenhower signs National System of Interstate and Defense Highways Act”"
+            },
+            "music": null,
+            "technology": {
+              "text": "IBM announced the 305 RAMAC in September 1956, the first computer system to use a moving-head hard disk drive — storing what was then a vast 5 megabytes.",
+              "sourceUrl": "https://www.computerhistory.org/storageengine/first-commercial-hard-disk-drive-shipped/",
+              "sourceLabel": "Computer History Museum, “First commercial hard disk drive shipped”"
+            }
+          },
+          "beliefs": {
+            "text": "Steve's mother Beatrice Dworkin was Jewish. Available sourcing documents his father Frederic's Swiss origins and Ford career in detail but says nothing about his own religious background or practice, so nothing is claimed here about it beyond what's already stated — a gap left open rather than filled with an assumption based on where he was from.",
+            "sourceUrl": "https://www.ebsco.com/research-starters/biography/steve-ballmer",
+            "sourceLabel": "EBSCO Research Starters, “Steve Ballmer”"
+          }
+        },
+        {
+          "label": "Grandparents",
+          "region": "Detroit, MI, USA",
+          "members": [
+            {
+              "name": null,
+              "relation": "Maternal grandparents (Beatrice Dworkin's parents)",
+              "years": null,
+              "facts": [
+                "Owned an auto parts business in the Detroit area, per EBSCO's biography of Ballmer. Not named in available sourcing."
+              ],
+              "sourceUrl": "https://www.ebsco.com/research-starters/biography/steve-ballmer",
+              "sourceLabel": "EBSCO Research Starters, “Steve Ballmer”"
+            }
+          ],
+          "globalContext": null,
+          "familyBusiness": {
+            "text": "Beatrice Dworkin's own family owned a Detroit-area auto parts business — the one clear case among this app's tracked billionaires of family wealth built around an existing family enterprise, though it was never carried forward into Ballmer's own career at Microsoft.",
+            "sourceUrl": "https://www.ebsco.com/research-starters/biography/steve-ballmer",
+            "sourceLabel": "EBSCO Research Starters, “Steve Ballmer”"
+          },
+          "trailEndsNote": "No names or further detail are documented in available sourcing for either the Dworkin grandparents or for Frederic Ballmer's own parents in Switzerland — the record stops here."
+        }
+      ]
+    },
+    "dell": {
+      "generations": [
+        {
+          "label": "Parents",
+          "region": "Houston, TX, USA",
+          "members": [
+            {
+              "name": "Alexander Dell",
+              "relation": "Father",
+              "years": null,
+              "facts": [
+                "An orthodontist."
+              ],
+              "sourceUrl": "https://en.wikipedia.org/wiki/Michael_Dell",
+              "sourceLabel": "Wikipedia, “Michael Dell”"
+            },
+            {
+              "name": "Lorraine Charlotte Dell (née Langfan)",
+              "relation": "Mother",
+              "years": null,
+              "facts": [
+                "A stockbroker."
+              ],
+              "sourceUrl": "https://en.wikipedia.org/wiki/Michael_Dell",
+              "sourceLabel": "Wikipedia, “Michael Dell”"
+            }
+          ],
+          "globalContext": null,
+          "familyBusiness": null,
+          "worldSnapshot": {
+            "politics": null,
+            "music": {
+              "text": "Michael was born February 23, 1965; that same month, Bob Dylan recorded “Like a Rolling Stone” (released as a single that July), a track *Rolling Stone* magazine would later rank the greatest song of all time.",
+              "sourceUrl": "https://en.wikipedia.org/wiki/Like_a_Rolling_Stone",
+              "sourceLabel": "Wikipedia, “Like a Rolling Stone”"
+            },
+            "technology": {
+              "text": "Two months after Michael's birth, Intel co-founder Gordon Moore published “Cramming More Components onto Integrated Circuits” in the April 19, 1965 issue of Electronics magazine — the paper that gave the world “Moore's Law,” the doubling of chip transistor density that would define the entire personal-computer industry Dell later built a company inside.",
+              "sourceUrl": "https://www.computerhistory.org/collections/catalog/102770836",
+              "sourceLabel": "Computer History Museum, “The future of integrated electronics”"
+            }
+          },
+          "trailEndsNote": "Michael Dell was born into a Jewish family in Houston, but available sourcing does not document his parents' own parents — no grandparent names, occupations, or immigration history were found. The record stops with Alexander and Lorraine.",
+          "beliefs": {
+            "text": "Michael Dell was born into a Jewish family in Houston. Available sourcing states this plainly but doesn't describe the family's level of observance or synagogue affiliation, so nothing further is claimed here.",
+            "sourceUrl": "https://en.wikipedia.org/wiki/Michael_Dell",
+            "sourceLabel": "Wikipedia, “Michael Dell”"
+          }
+        }
+      ]
+    },
+    "ortega": {
+      "generations": [
+        {
+          "label": "Parents",
+          "region": "Busdongo de Arbas, León → A Coruña, Spain",
+          "members": [
+            {
+              "name": "Antonio Ortega Rodríguez",
+              "relation": "Father",
+              "years": null,
+              "facts": [
+                "A railway worker for Spain's national rail network, whose postings moved the family first to Tolosa and, when Amancio was 14, to A Coruña in Galicia."
+              ],
+              "sourceUrl": "https://en.wikipedia.org/wiki/Amancio_Ortega",
+              "sourceLabel": "Wikipedia, “Amancio Ortega”"
+            },
+            {
+              "name": "Josefa Gaona Hernández",
+              "relation": "Mother",
+              "years": null,
+              "facts": [
+                "From the Province of Valladolid; occupation not specified in available sourcing."
+              ],
+              "sourceUrl": "https://en.wikipedia.org/wiki/Amancio_Ortega",
+              "sourceLabel": "Wikipedia, “Amancio Ortega”"
+            }
+          ],
+          "globalContext": {
+            "text": "Amancio, the youngest of four children, was born March 28, 1936 in Busdongo de Arbas, a small railway village in the mountains of León — less than four months before the Spanish Civil War broke out on July 17, 1936, the conflict that would bring Francisco Franco to power and shape the Spain his working-class railway family grew up in. Ortega left school at 14 to work as a shop assistant when the family moved to A Coruña, and personally founded the dressmaking workshop Confecciones Goa in 1963 — the direct precursor to Zara — himself; no inherited family business preceded it.",
+            "sourceUrl": "https://www.history.com/this-day-in-history/july-17/spanish-civil-war-breaks-out",
+            "sourceLabel": "History.com, “Spanish Civil War breaks out”"
+          },
+          "familyBusiness": null,
+          "worldSnapshot": {
+            "music": {
+              "text": "In November 1936, months after Amancio's birth, a 25-year-old Robert Johnson traveled to San Antonio, Texas for the recording sessions that produced “Cross Road Blues” and the rest of his first, foundational body of Delta blues recordings.",
+              "sourceUrl": "https://www.robertjohnsonbluesfoundation.org/timeline-event/johnson-has-first-recording-session/",
+              "sourceLabel": "Robert Johnson Blues Foundation, timeline"
+            },
+            "technology": {
+              "text": "The BBC launched the world's first regular high-definition television service from Alexandra Palace in London on November 2, 1936.",
+              "sourceUrl": "https://en.wikipedia.org/wiki/First_day_of_BBC_television",
+              "sourceLabel": "Wikipedia, “First day of BBC television”"
+            }
+          },
+          "trailEndsNote": "No sourcing was found naming Antonio's or Josefa's own parents — the record stops with Amancio's parents. (An earlier assumption that Zara's business predated Amancio's own ownership of it was checked against sourcing and corrected: he founded the company himself.)"
+        }
+      ]
+    },
+    "musk": {
+      "generations": [
+        {
+          "label": "Parents",
+          "region": "Pretoria, South Africa",
+          "members": [
+            {
+              "name": "Errol Musk",
+              "relation": "Father",
+              "years": null,
+              "facts": [
+                "An engineer whose firm took on large commercial projects — office buildings, retail complexes, residential subdivisions, and an air force base — and who also owned an auto parts store and at least a half share in an emerald mine (see the “Where the wealth claims come from” note below).",
+                "Served as an elected independent on the Pretoria City Council from 1972, representing the Sunnyside ward.",
+                "By the time he and Elon's mother Maye divorced in 1979, he owned two homes, a yacht, a plane, five luxury cars, and a truck."
+              ],
+              "sourceUrl": "https://en.wikipedia.org/wiki/Family_of_Elon_Musk",
+              "sourceLabel": "Wikipedia, “Family of Elon Musk”"
+            },
+            {
+              "name": "Maye Musk",
+              "relation": "Mother",
+              "years": null,
+              "facts": [
+                "A model and dietitian; daughter of Joshua N. Haldeman (see Grandparents below)."
+              ],
+              "sourceUrl": "https://en.wikipedia.org/wiki/Family_of_Elon_Musk",
+              "sourceLabel": "Wikipedia, “Family of Elon Musk”"
+            }
+          ],
+          "globalContext": {
+            "text": "Elon's two grandfathers arrived at apartheid-era South Africa from opposite directions and for very different reasons: his paternal grandfather Walter Musk's English-South African family had been there since before World War II, while his maternal grandfather Joshua Haldeman moved his family there from Canada in 1950 specifically because, in Errol Musk's own words, “they were very fanatical in favor of apartheid.” That maternal generation is covered in full below, given how directly documented and how consequential it is.",
+            "sourceUrl": "https://en.wikipedia.org/wiki/Joshua_N._Haldeman",
+            "sourceLabel": "Wikipedia, “Joshua N. Haldeman”"
+          },
+          "familyBusiness": {
+            "text": "Where the wealth claims come from: Errol Musk has said he owned a stake in an emerald mine in Zambia acquired in the mid-1980s, which he says collapsed in 1989. This is often retold as an “apartheid emerald mine” that seeded Elon's fortune — but Snopes's review found the mine was in Zambia, not South Africa, and found no evidence that its proceeds funded Elon's rise; biographer Ashlee Vance's reporting instead supports Elon's account of building his early wealth himself. The roughly $200,000 in angel funding Elon did receive from his father came later, well after the mine's reported collapse.",
+            "sourceUrl": "https://www.snopes.com/news/2022/11/17/elon-musk-emerald-mine/",
+            "sourceLabel": "Snopes, “What We Know About Elon Musk and the Emerald Mine Rumor”"
+          },
+          "worldSnapshot": {
+            "music": {
+              "text": "Elon was born June 28, 1971; that November, Led Zeppelin released their untitled fourth album — opening with “Black Dog” and closing with “Stairway to Heaven” — without the band's name or a title printed anywhere on its cover.",
+              "sourceUrl": "https://en.wikipedia.org/wiki/Led_Zeppelin_IV",
+              "sourceLabel": "Wikipedia, “Led Zeppelin IV”"
+            },
+            "technology": {
+              "text": "Intel released the 4004 in November 1971, the world's first commercially produced microprocessor — the ancestor of the chips that, decades later, would run the cars and rockets Elon's own companies built.",
+              "sourceUrl": "https://www.4004.com/",
+              "sourceLabel": "Intel 4004 — 50th Anniversary Project"
+            }
+          }
+        },
+        {
+          "label": "Grandparents",
+          "region": "Saskatchewan, Canada → Pretoria, South Africa  /  England → South Africa",
+          "members": [
+            {
+              "name": "Joshua N. Haldeman",
+              "relation": "Maternal grandfather",
+              "years": "1902–1974",
+              "facts": [
+                "A Canadian chiropractor (Palmer School of Chiropractic, 1926) who led the South African Chiropractors Association after emigrating, and who ran unsuccessfully for federal office in Canada twice, once losing to future Prime Minister John Diefenbaker.",
+                "Was active from 1936–1941 in Technocracy Incorporated, a movement calling for engineers and scientists to run the economy; he was arrested and fined in 1940 under Canada's wartime Defence of Canada Regulations for circulating its literature, and resigned in 1941 over the movement's pro-Soviet turn.",
+                "As a Social Credit Party leader in Saskatchewan in the 1940s, he defended the party newspaper's decision to publish the “Protocols of the Elders of Zion,” a fabricated antisemitic text, arguing in a speech that “the plan as outlined in these protocols has been rapidly unfolding” — while, per the same sourcing, formally discouraging the party from publicizing its antisemitism more broadly. Sourcing preserves this as a real tension rather than resolving it.",
+                "Moved the family to South Africa in 1950; his son-in-law Errol Musk said the Haldemans “were very fanatical in favor of apartheid… sympathised with the Afrikaner government.”",
+                "In a self-published 1960 pamphlet written weeks after the Sharpeville massacre, he described apartheid South Africa as “White Christian Civilization” and wrote that Black liberation movements sought to “oust the white man, who has in a few years brought their people from primitive savagery to a great measure of peace and security” — language preserved here verbatim rather than paraphrased, given how directly it bears on the historical record.",
+                "Died January 13, 1974, when his small plane's wheels caught a powerline during a practice landing near Pretoria."
+              ],
+              "sourceUrl": "https://en.wikipedia.org/wiki/Joshua_N._Haldeman",
+              "sourceLabel": "Wikipedia, “Joshua N. Haldeman”"
+            },
+            {
+              "name": "Walter Henry James Musk",
+              "relation": "Paternal grandfather",
+              "years": null,
+              "facts": [
+                "From an English-South African background; family accounts describe him serving as a cryptographer in a military intelligence unit in Egypt during World War II."
+              ],
+              "sourceUrl": "https://en.wikipedia.org/wiki/Family_of_Elon_Musk",
+              "sourceLabel": "Wikipedia, “Family of Elon Musk”"
+            },
+            {
+              "name": "Cora Amelia Robinson",
+              "relation": "Paternal grandmother",
+              "years": null,
+              "facts": [
+                "Born in Edge Hill, Liverpool to an English father and South African mother who had married in South Africa in 1911; the family moved back to Liverpool before Cora returned to South Africa during World War II."
+              ],
+              "sourceUrl": "https://en.wikipedia.org/wiki/Family_of_Elon_Musk",
+              "sourceLabel": "Wikipedia, “Family of Elon Musk”"
+            }
+          ],
+          "globalContext": null,
+          "trailEndsNote": "No sourcing was found describing Haldeman's or Cora Robinson's own parents beyond the bare facts above (Cora's grandparents' 1911 marriage in South Africa, and Haldeman's Mennonite paternal line, noted at left) — the record stops here rather than being pushed further back on thinner sourcing.",
+          "beliefs": {
+            "text": "Joshua Haldeman's own father came from Mennonite religious stock whose ancestors had left Switzerland generations earlier to escape persecution — but Haldeman's adult life ran toward political ideology more than inherited faith. From 1936 he was a leading figure in Technocracy Incorporated, which held that trained engineers and scientists, not elected politicians, should run the economy; after that movement's 1941 collapse he moved into Social Credit, where, as a Saskatchewan party leader, he defended the party newspaper's decision to publish the fabricated antisemitic “Protocols of the Elders of Zion.” Both the technocratic and the antisemitic-conspiratorial strands of his belief system are documented above on his own entry, preserved as written rather than smoothed into a single verdict.",
+            "sourceUrl": "https://en.wikipedia.org/wiki/Joshua_N._Haldeman",
+            "sourceLabel": "Wikipedia, “Joshua N. Haldeman”"
+          }
+        }
+      ]
+    }
+  }
+}

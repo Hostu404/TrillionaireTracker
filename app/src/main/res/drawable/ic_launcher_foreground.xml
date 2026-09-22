@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- A "T" for trillion, sitting on a rising baseline. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <path
+        android:fillColor="#3987E5"
+        android:pathData="M34,36 h40 v7 h-16.5 v29 h-7 v-29 h-16.5 z" />
+
+    <path
+        android:strokeColor="#3987E5"
+        android:strokeWidth="3.5"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:pathData="M34,80 L46,72 L58,76 L74,60" />
+</vector>
