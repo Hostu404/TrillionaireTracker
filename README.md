@@ -2,7 +2,7 @@
 
 An Android client built with **Kotlin and Jetpack Compose** that tracks live net worth milestones, real-time aircraft and vessel movements, news, and biographical histories. 
 
-**[Download Latest APK Release](https://github.com/hostu404/trillionaire-tracker/releases/latest)**
+**[Download Latest APK Release](https://github.com/Hostu404/TrillionaireTracker/releases/latest)**
 
 ---
 
