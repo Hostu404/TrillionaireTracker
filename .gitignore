@@ -1,0 +1,27 @@
+*.iml
+.gradle/
+.idea/
+build/
+local.properties
+captures/
+.externalNativeBuild/
+.cxx/
+
+# Personal deployment checklist/notes — not project docs, never public.
+# See SETUP-NOTES.md itself for what belongs here.
+SETUP-NOTES.md
+
+# backend/holdings.json is checked in on purpose — it's the worker's real
+# input data (public, sourced figures about public people), and the
+# automated workflow (.github/workflows/snapshot.yml) can't read it if it
+# isn't in the repo. backend/state.json and backend/airports.csv are also
+# checked in on purpose: the workflow commits them back to the repo itself
+# after every run so state persists between runs — if they were gitignored,
+# `git add` would refuse to stage them and the workflow's commit step would
+# fail on every run.
+#
+# backend/snapshot.json really is a runtime artefact: it's copied to
+# docs/snapshot.json (which IS committed and is what GitHub Pages serves)
+# and the backend/ copy itself is never meant to be tracked.
+backend/snapshot.json
+backend/__pycache__/
