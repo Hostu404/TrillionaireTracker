@@ -282,26 +282,22 @@ fun PersonDetailScreen(
                 }
             }
 
-            person.flight?.let { flight ->
-                // trackedSeconds alone is the right gate — buildTimelineSegments
-                // already renders a correct, honest strip with zero stops (the
-                // whole window as "No signal"), for exactly the case of a plane
-                // that's been tracked but never yet caught on the ground.
-                // Requiring recentStops too used to hide the card for that
-                // case entirely, even though there was real tracked time to
-                // show.
-                if (flight.trackedSeconds > 0) {
-                    item { TimeByLocationCard(flight, nowSeconds, airports) }
-                }
-            }
-
-            person.vessel?.let { vessel ->
-                // Same gate, same reasoning as the flight card above — the
-                // maritime mirror of it, sharing the exact same [TimelineStrip]
-                // component rather than a second chart type (see
-                // buildVesselTimelineSegments's doc comment).
-                if (vessel.trackedSeconds > 0) {
-                    item { VesselTimeByLocationCard(vessel, nowSeconds, ports) }
+            run {
+                // trackedSeconds alone is the right gate for each strip —
+                // buildTimelineSegments/buildVesselTimelineSegments already
+                // render a correct, honest strip with zero stops (the whole
+                // window as "No signal") for a plane/boat that's been
+                // tracked but never yet caught parked/in port. Requiring
+                // recentStops too used to hide a strip for that case
+                // entirely, even though there was real tracked time to show.
+                // A strip only appears at all once something has actually
+                // been confirmed — see snapshot_worker.py's flight_status/
+                // vessel_status, which no longer start the tracking clock
+                // on an aircraft or vessel that's never once been located.
+                val flight = person.flight?.takeIf { it.trackedSeconds > 0 }
+                val vessel = person.vessel?.takeIf { it.trackedSeconds > 0 }
+                if (flight != null || vessel != null) {
+                    item { TimeByLocationCard(flight, vessel, nowSeconds, airports, ports) }
                 }
             }
 
@@ -1158,12 +1154,22 @@ private fun buildTimelineSegments(
 }
 
 /**
- * Time by location as a real chronological log — built entirely from data
- * already on the flight card, no extra tracking, just a different view of
- * the same trailing-window airport stops (see [buildTimelineSegments]).
+ * One "TIME BY LOCATION" card holding whichever timelines this person has —
+ * a small "Plane" strip, a small "Boat" strip, or both stacked together —
+ * instead of two separate cards with duplicate headers/borders. A plane and
+ * a boat move independently of each other, so both stay visible at once
+ * rather than forcing a tap to switch between them. Either half is left out
+ * entirely (not just gated on trackedSeconds > 0 inside) so the header
+ * doesn't render at all for a person with neither.
  */
 @Composable
-private fun TimeByLocationCard(flight: FlightStatus, nowSeconds: Long, airports: Map<String, AirportInfo>) {
+private fun TimeByLocationCard(
+    flight: FlightStatus?,
+    vessel: VesselStatus?,
+    nowSeconds: Long,
+    airports: Map<String, AirportInfo>,
+    ports: Map<String, PortInfo>
+) {
     Column(
         Modifier
             .fillMaxWidth()
@@ -1172,25 +1178,79 @@ private fun TimeByLocationCard(flight: FlightStatus, nowSeconds: Long, airports:
             .padding(14.dp)
     ) {
         SectionLabel(text = "TIME BY LOCATION")
-        Spacer(Modifier.height(2.dp))
-        Text(
-            text = "${Format.duration(flight.trackedSeconds)} tracked",
-            color = TT.inkMuted,
-            fontSize = 11.sp
-        )
 
-        Spacer(Modifier.height(10.dp))
+        if (flight != null) {
+            Spacer(Modifier.height(10.dp))
+            TimeByLocationStrip(
+                label = "Plane",
+                trackedCaption = "${Format.duration(flight.trackedSeconds)} tracked",
+                segments = buildTimelineSegments(
+                    recentStops = flight.recentStops,
+                    flightState = flight.state,
+                    trackedSeconds = flight.trackedSeconds,
+                    nowEpoch = nowSeconds,
+                    airports = airports
+                ),
+                windowStartEpoch = nowSeconds - flight.trackedSeconds,
+                windowEndEpoch = nowSeconds
+            )
+        }
+
+        if (vessel != null) {
+            Spacer(Modifier.height(if (flight != null) 16.dp else 10.dp))
+            TimeByLocationStrip(
+                label = "Boat",
+                trackedCaption = "${Format.duration(vessel.trackedSeconds)} tracked",
+                segments = buildVesselTimelineSegments(
+                    recentStops = vessel.recentStops,
+                    vesselState = vessel.state,
+                    trackedSeconds = vessel.trackedSeconds,
+                    nowEpoch = nowSeconds,
+                    ports = ports
+                ),
+                windowStartEpoch = nowSeconds - vessel.trackedSeconds,
+                windowEndEpoch = nowSeconds
+            )
+        }
+    }
+}
+
+/**
+ * One labeled timeline strip ("Plane" or "Boat") inside the shared
+ * [TimeByLocationCard] — just the label row plus [TimelineStrip], factored
+ * out so the plane and boat halves render identically instead of drifting
+ * apart the way two full copy-pasted cards eventually would.
+ */
+@Composable
+private fun TimeByLocationStrip(
+    label: String,
+    trackedCaption: String,
+    segments: List<TimelineSegment>,
+    windowStartEpoch: Long,
+    windowEndEpoch: Long
+) {
+    Column {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                text = label,
+                color = TT.inkSecondary,
+                fontSize = 12.sp,
+                fontWeight = FontWeight.SemiBold
+            )
+            Spacer(Modifier.width(8.dp))
+            Text(
+                text = trackedCaption,
+                color = TT.inkMuted,
+                fontSize = 11.sp
+            )
+        }
+
+        Spacer(Modifier.height(8.dp))
 
         TimelineStrip(
-            segments = buildTimelineSegments(
-                recentStops = flight.recentStops,
-                flightState = flight.state,
-                trackedSeconds = flight.trackedSeconds,
-                nowEpoch = nowSeconds,
-                airports = airports
-            ),
-            windowStartEpoch = nowSeconds - flight.trackedSeconds,
-            windowEndEpoch = nowSeconds
+            segments = segments,
+            windowStartEpoch = windowStartEpoch,
+            windowEndEpoch = windowEndEpoch
         )
     }
 }
@@ -1261,46 +1321,6 @@ private fun buildVesselTimelineSegments(
     }
 
     return segments
-}
-
-/**
- * Time by location for a vessel — the maritime mirror of [TimeByLocationCard],
- * reusing the exact same [TimelineStrip] component rather than a second chart
- * type, per the same "fit into the chart that's already there" request that
- * shaped this whole feature. Only [buildVesselTimelineSegments] differs from
- * the flight version, to work off [PortStop]/[PortInfo] instead.
- */
-@Composable
-private fun VesselTimeByLocationCard(vessel: VesselStatus, nowSeconds: Long, ports: Map<String, PortInfo>) {
-    Column(
-        Modifier
-            .fillMaxWidth()
-            .background(TT.surface, TT.panelShape(14.dp))
-            .border(1.dp, TT.border, TT.panelShape(14.dp))
-            .padding(14.dp)
-    ) {
-        SectionLabel(text = "TIME BY LOCATION")
-        Spacer(Modifier.height(2.dp))
-        Text(
-            text = "${Format.duration(vessel.trackedSeconds)} tracked",
-            color = TT.inkMuted,
-            fontSize = 11.sp
-        )
-
-        Spacer(Modifier.height(10.dp))
-
-        TimelineStrip(
-            segments = buildVesselTimelineSegments(
-                recentStops = vessel.recentStops,
-                vesselState = vessel.state,
-                trackedSeconds = vessel.trackedSeconds,
-                nowEpoch = nowSeconds,
-                ports = ports
-            ),
-            windowStartEpoch = nowSeconds - vessel.trackedSeconds,
-            windowEndEpoch = nowSeconds
-        )
-    }
 }
 
 /**
