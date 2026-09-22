@@ -268,7 +268,27 @@ data class FlightStatus(
      * less than 7 full days right after the backend starts tracking a new
      * aircraft — percentages are of this, not a blind 7-day assumption.
      */
-    val trackedSeconds: Long = 0L
+    val trackedSeconds: Long = 0L,
+    /**
+     * The bucket the backend just assigned for *this* pass — "IN_FLIGHT",
+     * "SIGNAL_LOST", an airport ICAO, or null on older cached snapshots that
+     * predate this field. [state] alone can't distinguish an ordinary short
+     * ADS-B gap (still UNKNOWN, but honestly "no signal yet") from one
+     * that's run long enough the backend no longer believes the aircraft is
+     * still airborne on the same leg — that's what this is for. See
+     * snapshot_worker.py's flight_status() for exactly when SIGNAL_LOST
+     * gets set.
+     */
+    val currentBucket: String? = null,
+    /**
+     * Only meaningful when [currentBucket] is "SIGNAL_LOST": the last
+     * heading-based guess at where the aircraft was headed before contact
+     * was lost, so the UI can say *where* it probably landed instead of a
+     * bare "somewhere, unknown". Null when no such guess exists — the UI
+     * should read that as "possibly landed, location unclear," not as
+     * missing data.
+     */
+    val probableIcao: String? = null
 )
 
 @Serializable

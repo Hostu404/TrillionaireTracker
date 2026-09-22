@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -38,6 +39,7 @@ import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
@@ -258,15 +260,20 @@ fun PersonDetailScreen(
                 }
             }
 
-            item {
-                FlightCard(
-                    flight = person.flight,
-                    nowSeconds = nowSeconds,
-                    airports = airports,
-                    onFocusMap = flightPin?.let { pin ->
-                        { mapFocusPin = pin; mapFocusToken++ }
-                    }
-                )
+            person.flight?.let { flight ->
+                // Same gate as BoatCard below: nobody with no plane assigned
+                // at all needs a card that exists only to say "No aircraft
+                // mapped." — that's a card for nobody, not useful information.
+                item {
+                    FlightCard(
+                        flight = flight,
+                        nowSeconds = nowSeconds,
+                        airports = airports,
+                        onFocusMap = flightPin?.let { pin ->
+                            { mapFocusPin = pin; mapFocusToken++ }
+                        }
+                    )
+                }
             }
 
             person.vessel?.let { vessel ->
@@ -380,6 +387,54 @@ private fun townMapUrl(residence: String): String {
  * to stay legible over an arbitrary photo instead of this app's own
  * surface color.
  */
+/**
+ * Renders [text] with a thin black outline behind the normal fill —
+ * [PersonHeader]'s identity text (name/company/age) sits directly on top of
+ * an arbitrary photo rather than this app's own surface color, and the
+ * bottom scrim gradient alone doesn't guarantee contrast against every
+ * photo's own bright/high-key areas.
+ *
+ * Deliberately NOT built on Compose's text `drawStyle = Stroke(...)` — that
+ * traces the glyph outline through Skia's font stroker, which follows every
+ * curve of the letterforms and comes out blotchy and uneven at these small
+ * sizes (tried it; it looked like a smudge, not an outline). Instead this
+ * draws the same text several times in solid black, each nudged a hair in a
+ * different direction, with the real white text on top — the classic "faux
+ * outline" trick from games/overlays, and a much cleaner, crisper result
+ * than stroking the glyphs themselves.
+ */
+@Composable
+private fun OutlinedWhiteText(
+    text: String,
+    fontSize: TextUnit,
+    modifier: Modifier = Modifier,
+    color: Color = Color.White,
+    fontWeight: FontWeight? = null
+) {
+    val nudge = 0.6.dp
+    val outlineColor = Color.Black.copy(alpha = 0.75f)
+    Box(modifier) {
+        listOf(-nudge to -nudge, 0.dp to -nudge, nudge to -nudge,
+               -nudge to 0.dp,                    nudge to 0.dp,
+               -nudge to nudge,  0.dp to nudge,   nudge to nudge
+        ).forEach { (dx, dy) ->
+            Text(
+                text = text,
+                fontSize = fontSize,
+                fontWeight = fontWeight,
+                color = outlineColor,
+                modifier = Modifier.offset(x = dx, y = dy)
+            )
+        }
+        Text(
+            text = text,
+            fontSize = fontSize,
+            fontWeight = fontWeight,
+            color = color
+        )
+    }
+}
+
 @Composable
 private fun PersonHeader(
     name: String,
@@ -463,17 +518,17 @@ private fun PersonHeader(
                 .fillMaxWidth()
                 .padding(horizontal = 14.dp, vertical = 10.dp)
         ) {
-            Text(
+            OutlinedWhiteText(
                 text = name,
                 color = Color.White,
                 fontSize = 20.sp,
                 fontWeight = FontWeight.SemiBold
             )
-            Text(text = company, color = Color.White.copy(alpha = 0.78f), fontSize = 13.sp)
+            OutlinedWhiteText(text = company, color = Color.White.copy(alpha = 0.78f), fontSize = 13.sp)
 
             if (age != null && birthLabel != null) {
                 Spacer(Modifier.height(3.dp))
-                Text(
+                OutlinedWhiteText(
                     text = "Age $age · Born $birthLabel",
                     color = Color.White.copy(alpha = 0.62f),
                     fontSize = 11.sp
@@ -582,13 +637,17 @@ private fun SectionLabel(text: String) {
  */
 @Composable
 private fun FlightCard(
-    flight: FlightStatus?,
+    flight: FlightStatus,
     nowSeconds: Long,
     airports: Map<String, AirportInfo>,
     onFocusMap: (() -> Unit)? = null
 ) {
     val uriHandler = LocalUriHandler.current
     fun label(icao: String) = airports[icao]?.label ?: icao
+    // A plain UNKNOWN reading covers two very different situations — see
+    // snapshot_worker.py's flight_status() `was == "AIRBORNE"` branch — and
+    // only currentBucket, not state, tells them apart.
+    val signalLost = flight.state == FlightState.UNKNOWN && flight.currentBucket == "SIGNAL_LOST"
 
     Column(
         Modifier
@@ -604,22 +663,15 @@ private fun FlightCard(
 
         Spacer(Modifier.height(8.dp))
 
-        if (flight == null) {
-            Text(
-                text = "No aircraft mapped.",
-                color = TT.inkSecondary,
-                fontSize = 14.sp
-            )
-            return@Column
-        }
-
         Row(verticalAlignment = Alignment.CenterVertically) {
-            when (flight.state) {
-                FlightState.AIRBORNE ->
+            when {
+                flight.state == FlightState.AIRBORNE ->
                     StatusChip(glyph = "✈", label = "AIRBORNE NOW", color = TT.warning)
-                FlightState.ON_GROUND ->
+                flight.state == FlightState.ON_GROUND ->
                     StatusChip(glyph = "●", label = "ON GROUND", color = TT.inkSecondary)
-                FlightState.UNKNOWN ->
+                signalLost ->
+                    StatusChip(glyph = "!", label = "SIGNAL LOST", color = TT.critical)
+                else ->
                     StatusChip(glyph = "?", label = "NO SIGNAL", color = TT.inkMuted)
             }
             Spacer(Modifier.width(8.dp))
@@ -643,6 +695,9 @@ private fun FlightCard(
                 flight.state == FlightState.ON_GROUND && flight.currentAirportIcao != null ->
                     label(flight.currentAirportIcao)
                 flight.state == FlightState.AIRBORNE -> "In the air — no fixed location"
+                signalLost && flight.probableIcao != null ->
+                    "Possibly landed near ${label(flight.probableIcao)} (unconfirmed)"
+                signalLost -> "Possibly landed — location unclear (unconfirmed)"
                 else -> "No signal"
             }
         )
@@ -1075,9 +1130,32 @@ private fun vesselMapPin(vessel: VesselStatus?, ports: Map<String, PortInfo>): M
 private fun bucketLabel(bucket: String, airports: Map<String, AirportInfo>): String = when (bucket) {
     "IN_FLIGHT" -> "In flight"
     "NO_SIGNAL" -> "No signal"
+    "SIGNAL_LOST" -> "Signal lost — possibly landed"
     "UNKNOWN_AIRPORT" -> "Unmatched airport"
     "OTHER" -> "Other airports"
     else -> airports[bucket]?.label ?: bucket
+}
+
+/**
+ * What the *live, right-now* edge of the flight strip reads as, whenever
+ * there's no confirmed stop covering this exact moment (either the whole
+ * tracked window is empty, or there's a gap after the last known stop).
+ * Plain [FlightState.UNKNOWN] alone can't tell an ordinary short ADS-B gap
+ * apart from one that's run long enough the backend no longer believes the
+ * aircraft is still on the same leg — see [FlightStatus.currentBucket]'s doc
+ * comment and flight_status()'s `was == "AIRBORNE"` branch for where that
+ * distinction actually gets made.
+ */
+private fun liveFlightBucket(flightState: FlightState, currentBucket: String?): String = when {
+    flightState == FlightState.AIRBORNE -> "IN_FLIGHT"
+    currentBucket == "SIGNAL_LOST" -> "SIGNAL_LOST"
+    else -> "NO_SIGNAL"
+}
+
+private fun liveFlightColor(bucket: String): Color = when (bucket) {
+    "IN_FLIGHT" -> TT.warning
+    "SIGNAL_LOST" -> TT.critical
+    else -> TT.inkMuted
 }
 
 /**
@@ -1108,6 +1186,7 @@ private fun bucketLabel(bucket: String, airports: Map<String, AirportInfo>): Str
 private fun buildTimelineSegments(
     recentStops: List<AirportStop>,
     flightState: FlightState,
+    currentBucket: String?,
     trackedSeconds: Long,
     nowEpoch: Long,
     airports: Map<String, AirportInfo>
@@ -1118,7 +1197,21 @@ private fun buildTimelineSegments(
         .filter { (it.departedAtEpoch ?: nowEpoch) > windowStart }
 
     if (ordered.isEmpty()) {
-        return listOf(TimelineSegment(bucketLabel("NO_SIGNAL", airports), windowStart, nowEpoch, TT.inkMuted))
+        // No confirmed *stop* falls inside the window — but a plane that took
+        // off before this window started and hasn't landed since (the normal
+        // shape of a long-haul leg, or just "we started watching mid-flight")
+        // will always have zero stops while still being solidly confirmed
+        // IN_FLIGHT for the entire window. This card only renders at all when
+        // trackedSeconds > 0, which already guarantees *something* real was
+        // confirmed, so "no stops yet" means "no landing yet", not "no signal
+        // ever" — reflect the live state instead of defaulting to the
+        // no-signal sentinel, which used to paint a plane that's been
+        // confirmed airborne the whole time as 100% "No signal". A long
+        // enough signal-loss gap still resolves to SIGNAL_LOST here too,
+        // same as the trailing-gap case below.
+        val bucket = liveFlightBucket(flightState, currentBucket)
+        val color = liveFlightColor(bucket)
+        return listOf(TimelineSegment(bucketLabel(bucket, airports), windowStart, nowEpoch, color))
     }
 
     val topIcaos = ordered.map { it.icao }.distinct().sorted().take(5)
@@ -1145,8 +1238,8 @@ private fun buildTimelineSegments(
     }
 
     if (cursor < nowEpoch) {
-        val trailingKey = if (flightState == FlightState.AIRBORNE) "IN_FLIGHT" else "NO_SIGNAL"
-        val trailingColor = if (flightState == FlightState.AIRBORNE) TT.warning else TT.inkMuted
+        val trailingKey = liveFlightBucket(flightState, currentBucket)
+        val trailingColor = liveFlightColor(trailingKey)
         segments += TimelineSegment(bucketLabel(trailingKey, airports), cursor, nowEpoch, trailingColor)
     }
 
@@ -1187,6 +1280,7 @@ private fun TimeByLocationCard(
                 segments = buildTimelineSegments(
                     recentStops = flight.recentStops,
                     flightState = flight.state,
+                    currentBucket = flight.currentBucket,
                     trackedSeconds = flight.trackedSeconds,
                     nowEpoch = nowSeconds,
                     airports = airports
@@ -1288,7 +1382,15 @@ private fun buildVesselTimelineSegments(
         .filter { (it.departedAtEpoch ?: nowEpoch) > windowStart }
 
     if (ordered.isEmpty()) {
-        return listOf(TimelineSegment(vesselBucketLabel("NO_SIGNAL", ports), windowStart, nowEpoch, TT.inkMuted))
+        // Same fix as buildTimelineSegments' matching branch above: a yacht
+        // that's been underway the whole tracked window (no port stop yet)
+        // has zero recentStops by construction, but trackedSeconds > 0 (the
+        // only way this card renders) already guarantees it's been genuinely
+        // confirmed — so reflect the live state rather than defaulting to
+        // "No signal" for a vessel that's actually been tracked the entire time.
+        val bucket = if (vesselState == VesselState.UNDERWAY) "UNDERWAY" else "NO_SIGNAL"
+        val color = if (vesselState == VesselState.UNDERWAY) TT.warning else TT.inkMuted
+        return listOf(TimelineSegment(vesselBucketLabel(bucket, ports), windowStart, nowEpoch, color))
     }
 
     val topCodes = ordered.map { it.unlocode }.distinct().sorted().take(5)

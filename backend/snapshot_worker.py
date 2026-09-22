@@ -55,6 +55,25 @@ from typing import Any
 
 HISTORY_WINDOW_SECONDS = 7 * 86_400   # every self-managed series in this file trims to this
 
+# How long flight_status() keeps assuming "still on the same flight" after
+# ADS-B goes quiet mid-air, before admitting it's lost the plot. Two
+# different triggers, because they answer two different questions:
+#   - SIGNAL_LOST_GRACE_SECONDS only fires once there's *also* a recent
+#     heading-based guess at where the aircraft was headed (see
+#     estimate_heading_destination). A course that clearly pointed at one
+#     specific nearby airport, followed by silence well past this grace
+#     period, is a landing there we simply didn't catch — not a flight
+#     still in progress.
+#   - SIGNAL_LOST_HARD_CEILING_SECONDS applies regardless of any estimate —
+#     no aircraft in a billionaire's hangar has the range to stay airborne
+#     this long on one leg, so past this point "still flying" stops being
+#     plausible at all, estimate or not.
+# Below both thresholds this still reads IN_FLIGHT, unchanged from before —
+# the overwhelming majority of ADS-B gaps are minutes long (rural coverage,
+# a brief oceanic hole) and shouldn't trip either trigger.
+SIGNAL_LOST_GRACE_SECONDS = 90 * 60          # 90 minutes
+SIGNAL_LOST_HARD_CEILING_SECONDS = 14 * 3600  # 14 hours
+
 USER_AGENT = "trillionaire-tracker/0.1 (+https://github.com/Hostu404)"
 TIMEOUT = 15
 
@@ -628,11 +647,30 @@ def flight_status(subject: Subject, prev: dict, airports, now: int) -> dict | No
         # last seen rather than a bare "no signal".
         bucket = memory.get("last_ground_icao") or "UNKNOWN_AIRPORT"
     elif was == "AIRBORNE":
-        # Last confirmed airborne with no landing recorded since — an
-        # ADS-B coverage gap mid-flight (rural or oceanic dead zones are
-        # routine) is far likelier than the aircraft vanishing, so this
-        # stays IN_FLIGHT: still the same leg, not a third state.
-        bucket = "IN_FLIGHT"
+        # Last confirmed airborne with no landing recorded since. A short
+        # gap is an ordinary ADS-B coverage hole (rural or oceanic dead
+        # zones are routine — free feeds like adsb.lol/OpenSky have no
+        # satellite fill-in over open water) and the aircraft vanishing
+        # mid-leg is still far likelier than that, so this keeps reading
+        # IN_FLIGHT at first, same as always.
+        #
+        # But "assume still flying" forever becomes actively dishonest once
+        # the silence outlasts what's physically plausible for the same
+        # leg, or runs well past wherever the aircraft's own course was
+        # clearly pointing right before it went quiet. The real case this
+        # catches: landing somewhere with no ADS-B ground coverage at all —
+        # a small private strip is the usual culprit — sitting there for
+        # hours, then taking off again without ever once being confirmed on
+        # the ground. Silently drawing that whole layover as "in flight"
+        # would be worse than admitting we don't actually know — same
+        # philosophy as the NO_SIGNAL case below, just for a leg that
+        # clearly did start.
+        gap = now - memory.get("last_seen", now)
+        had_estimate = bool(memory.get("last_airborne_estimate_icao"))
+        if (had_estimate and gap >= SIGNAL_LOST_GRACE_SECONDS) or gap >= SIGNAL_LOST_HARD_CEILING_SECONDS:
+            bucket = "SIGNAL_LOST"
+        else:
+            bucket = "IN_FLIGHT"
     else:
         # This aircraft has never once been located — nothing to carry
         # forward to, so "no signal" is an honest description here, not a
@@ -703,6 +741,15 @@ def flight_status(subject: Subject, prev: dict, airports, now: int) -> dict | No
             airports, lat, lon, float(track), exclude_icao=memory.get("departed_icao")
         )
 
+    if airborne and estimate is not None:
+        # Remembered across passes so a later signal-loss gap (see the
+        # `was == "AIRBORNE"` branch above) has something concrete to judge
+        # plausibility against instead of guessing blind. Only overwritten
+        # on a fresh, real estimate — a pass with no track data briefly
+        # available doesn't erase the last good guess.
+        memory["last_airborne_estimate_icao"] = estimate
+        memory["last_airborne_estimate_at"] = now
+
     return {
         "tail": subject.tail or subject.icao_hex.upper(),
         "icaoHex": subject.icao_hex.lower(),
@@ -742,6 +789,24 @@ def flight_status(subject: Subject, prev: dict, airports, now: int) -> dict | No
             {"bucket": b["bucket"], "seconds": b["seconds"]} for b in location_breakdown
         ],
         "trackedSeconds": tracked_seconds,
+        # The bucket this exact pass just assigned above — distinct from
+        # `state`, which only ever says AIRBORNE/ON_GROUND/UNKNOWN and can't
+        # by itself tell the client whether a current UNKNOWN reading is an
+        # ordinary short gap (still shown as "no signal") or a gap that's
+        # crossed into SIGNAL_LOST territory (see the `was == "AIRBORNE"`
+        # branch above) — the client needs this to pick the right label/
+        # color for whatever's happening *right now*, since the timeline
+        # strip's confirmed history is deliberately built from recentStops
+        # instead (see buildTimelineSegments in PersonDetailScreen.kt).
+        "currentBucket": bucket,
+        # Only meaningful when currentBucket == "SIGNAL_LOST": the last
+        # heading-based guess at a destination before contact was lost, so
+        # the client can say *where* it probably landed instead of just
+        # "somewhere, we don't know". None when no such guess was ever made
+        # (e.g. the hard-ceiling trigger fired with no clear course to go
+        # on) — the client should fall back to an unspecified "possibly
+        # landed" in that case rather than treating None as an error.
+        "probableIcao": memory.get("last_airborne_estimate_icao") if bucket == "SIGNAL_LOST" else None,
     }
 
 
