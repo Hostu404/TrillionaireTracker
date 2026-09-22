@@ -4,6 +4,9 @@ An Android client built with **Kotlin and Jetpack Compose** that tracks live net
 
 **[Download Latest APK Release](https://github.com/Hostu404/TrillionaireTracker/releases/latest)**
 
+<img width="1216" height="874" alt="image" src="https://github.com/user-attachments/assets/9084f669-0f73-4a27-8175-7a3f0bd4cb55" />
+
+
 ---
 
 ## Features
