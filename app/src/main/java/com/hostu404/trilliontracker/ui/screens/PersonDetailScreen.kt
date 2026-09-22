@@ -163,12 +163,13 @@ fun PersonDetailScreen(
                     wikipediaUrl = person.wikipediaUrl,
                     birthDate = person.birthDate,
                     residence = person.residence,
+                    socialUrl = person.socialUrl,
                     onBack = onBack
                 )
             }
 
             person.bio?.let { bio ->
-                item { BiographyCard(bio, socialUrl = person.socialUrl) }
+                item { BiographyCard(bio) }
             }
 
             if (hasFamilyHistory) {
@@ -281,7 +282,14 @@ fun PersonDetailScreen(
             }
 
             person.flight?.let { flight ->
-                if (flight.recentStops.isNotEmpty() && flight.trackedSeconds > 0) {
+                // trackedSeconds alone is the right gate — buildTimelineSegments
+                // already renders a correct, honest strip with zero stops (the
+                // whole window as "No signal"), for exactly the case of a plane
+                // that's been tracked but never yet caught on the ground.
+                // Requiring recentStops too used to hide the card for that
+                // case entirely, even though there was real tracked time to
+                // show.
+                if (flight.trackedSeconds > 0) {
                     item { TimeByLocationCard(flight, nowSeconds, airports) }
                 }
             }
@@ -357,6 +365,13 @@ private fun townMapUrl(residence: String): String {
  * inside this banner too now — tucked into its own top-left corner using
  * the same [TT.panelShape] chamfer the banner itself is clipped to, rather
  * than sitting above it as a separate row that only added empty space.
+ * [socialUrl] mirrors that same treatment in the top-right corner — moved
+ * off the end of [BiographyCard] so a profile's link-out sits with the rest
+ * of its identity (photo, name, back button) instead of several cards
+ * further down the screen. It needs the same dark chip [onBack] already
+ * uses, not [BiographyCard]'s old bare-glyph treatment, because it now has
+ * to stay legible over an arbitrary photo instead of this app's own
+ * surface color.
  */
 @Composable
 private fun PersonHeader(
@@ -366,6 +381,7 @@ private fun PersonHeader(
     wikipediaUrl: String?,
     birthDate: String?,
     residence: String?,
+    socialUrl: String?,
     onBack: () -> Unit
 ) {
     val uriHandler = LocalUriHandler.current
@@ -498,6 +514,28 @@ private fun PersonHeader(
                 fontSize = 18.sp,
                 fontWeight = FontWeight.Bold
             )
+        }
+
+        // The mirror image of the back button above — same chip, same
+        // chamfer, opposite corner. Link-out only, never embedded (see
+        // [socialPlatformGlyph]'s own doc comment for why).
+        if (socialUrl != null) {
+            Box(
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .clip(TT.panelShape(14.dp))
+                    .background(Color.Black.copy(alpha = 0.55f))
+                    .border(1.dp, TT.borderBright, TT.panelShape(14.dp))
+                    .clickable { uriHandler.openUri(socialUrl) }
+                    .padding(start = 11.dp, top = 9.dp, end = 14.dp, bottom = 8.dp)
+            ) {
+                Text(
+                    text = socialPlatformGlyph(socialUrl),
+                    color = TT.accentCyan,
+                    fontSize = 16.sp,
+                    fontWeight = FontWeight.Bold
+                )
+            }
         }
     }
 }
@@ -1173,11 +1211,13 @@ private fun FamilyHistoryEntryCard(onClick: () -> Unit) {
 /**
  * Renders [Person.bio] — see that field's doc comment for why it's one
  * pre-written paragraph rather than separate birthplace/education fields.
+ * The link-out social glyph that used to sit at the end of this card now
+ * lives on [PersonHeader] instead, overlaid on the photo next to the back
+ * button — same identity information, no longer several cards away from
+ * the rest of it.
  */
 @Composable
-private fun BiographyCard(bio: String, socialUrl: String?) {
-    val uriHandler = LocalUriHandler.current
-
+private fun BiographyCard(bio: String) {
     Column(
         Modifier
             .fillMaxWidth()
@@ -1193,42 +1233,19 @@ private fun BiographyCard(bio: String, socialUrl: String?) {
             fontSize = 13.sp,
             lineHeight = 19.sp
         )
-        if (socialUrl != null) {
-            Spacer(Modifier.height(8.dp))
-            SocialLink(
-                url = socialUrl,
-                onClick = { uriHandler.openUri(socialUrl) },
-                modifier = Modifier.align(Alignment.End)
-            )
-        }
     }
 }
 
 /**
- * Link out, never embed. Pulling live posts means a metered per-read API bill
- * (X's read API has no free tier as of 2026) that scales with users — the one
- * thing the whole snapshot architecture exists to avoid. Folded onto the end
- * of [BiographyCard] rather than its own standalone card, and rendered as
- * just the platform's own mark — no button chrome, no "View on X" text —
- * since the bare logo already reads as a link-out the way it would on any
- * other profile; a background/border box around it read as a UI control
- * competing with the rest of the card instead of an inline link. [socialPlatformGlyph]
- * identifies which mark to show from [url]'s host only — it never guesses
- * from the person, just reads the link they gave us.
+ * Link out, never embed — pulling live posts means a metered per-read API
+ * bill (X's read API has no free tier as of 2026) that scales with users,
+ * the one thing the whole snapshot architecture exists to avoid. Identifies
+ * which mark to show from [url]'s host only — it never guesses from the
+ * person, just reads the link they gave us. Rendered on [PersonHeader] as
+ * just this platform mark inside the same dark chip [onBack] uses — no
+ * "View on X" text, since the mark alone already reads as a link-out the
+ * way it would on any other profile.
  */
-@Composable
-private fun SocialLink(url: String, onClick: () -> Unit, modifier: Modifier = Modifier) {
-    Text(
-        text = socialPlatformGlyph(url),
-        color = TT.accentCyan,
-        fontSize = 17.sp,
-        fontWeight = FontWeight.Bold,
-        modifier = modifier
-            .clickable(onClick = onClick)
-            .padding(6.dp)
-    )
-}
-
 private fun socialPlatformGlyph(url: String): String {
     val host = try {
         java.net.URI(url).host.orEmpty().lowercase()
