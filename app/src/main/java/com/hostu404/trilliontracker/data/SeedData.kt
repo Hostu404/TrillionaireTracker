@@ -53,7 +53,6 @@ object SeedData {
                 flight = flightFor(row.id, nowEpoch),
                 vessel = vesselFor(row.id, nowEpoch),
                 news = newsFor(row.id, nowEpoch),
-                upcomingEvents = upcomingEventsFor(row.id),
                 socialUrl = socialFor(row.id),
                 wikipediaUrl = wikipediaFor(row.id),
                 photoUrl = photoFor(row.id),
@@ -456,51 +455,6 @@ object SeedData {
             "14 to work as a delivery boy for a local shirtmaker — he has no " +
             "university education."
         else -> null
-    }
-
-    /**
-     * Real, officially-announced appearances only — see [PublicEvent] and
-     * the README's Events section for the sourcing bar. Two notes from the
-     * research behind this list, the same kind of "checked and it didn't
-     * hold up" finding as [residenceFor]'s Ellison/Brin notes:
-     *
-     * - Tesla's Q3 2026 earnings call is commonly listed as "Oct 21, 2026"
-     *   by third-party earnings calendars, but every one of them marks it
-     *   UNCONFIRMED — an analyst's forecast from Tesla's own reporting
-     *   pattern, not a date Tesla has actually announced. Left out entirely
-     *   rather than published as if Musk himself confirmed it.
-     * - Oracle AI World 2026 (Oct 25-28, Las Vegas) is real and dated, but
-     *   its own keynote page lists Clay Magouyrk and Mike Sicilia — Oracle's
-     *   co-CEOs since Ellison moved to Chairman/CTO — with no Ellison
-     *   session. The obvious assumption (Ellison keynotes Oracle's own
-     *   conference, like he always used to) turned out to be exactly the
-     *   kind of thing this app doesn't publish without a source, so Oracle
-     *   AI World isn't in his list either.
-     */
-    private fun upcomingEventsFor(id: String): List<PublicEvent> = when (id) {
-        "zuckerberg" -> listOf(
-            PublicEvent(
-                title = "Meta Connect 2026 keynote",
-                venue = "Meta Headquarters",
-                city = "Menlo Park, CA",
-                startEpoch = 1_790_204_400L, // Wed, Sep 23, 2026, 4:00 PM PDT
-                url = "https://www.meta.com/connect/",
-                source = "Meta"
-            )
-        )
-
-        "huang" -> listOf(
-            PublicEvent(
-                title = "NVIDIA GTC Washington, D.C. keynote",
-                venue = "Ronald Reagan Building and International Trade Center",
-                city = "Washington, DC",
-                startEpoch = 1_796_151_600L, // Tue, Dec 1, 2026, 2:00 PM EST
-                url = "https://www.nvidia.com/gtc/dc/",
-                source = "NVIDIA"
-            )
-        )
-
-        else -> emptyList()
     }
 
     private fun newsFor(id: String, nowEpoch: Long): List<NewsItem> = when (id) {

@@ -17,15 +17,13 @@ import kotlinx.serialization.Serializable
  * airborne (see [FlightStatus], [com.hostu404.trilliontracker.data.LiveFlightTracker]);
  * a live, stock-price-computed net worth for whichever billionaires
  * [com.hostu404.trilliontracker.data.Holdings] has a priced holding set for
- * (see [Person.driftPerSecondUsd], [NetWorthEngine], `StooqClient`); and
+ * (see [Person.driftPerSecondUsd], [NetWorthEngine], `LiveQuoteClient`); and
  * live headlines for whoever's detail screen is open right now (see
  * [Person.news], `GoogleNewsClient`). All three run entirely client-side —
  * there's no backend in seed mode to do this fetching on the client's
  * behalf — all three are batched/scoped to the minimum each tick actually
  * needs, and none of them is written back into a snapshot anywhere;
- * everything else in this document still comes only from here. Notably
- * absent: [Person.upcomingEvents] stays snapshot/seed-only — see its own
- * doc comment for why there's no honest live source for that one to poll.
+ * everything else in this document still comes only from here.
  */
 @Serializable
 data class Snapshot(
@@ -135,16 +133,18 @@ data class Person(
     /**
      * A short, hand-curated biography — birthplace and the last school or
      * university they attended (whether or not they finished it), same
-     * sourcing bar as [birthDate]/[residence]. Deliberately a single
-     * pre-written sentence or two rather than separate structured fields:
-     * several of these people left a *later* graduate program without
-     * finishing after completing an earlier degree elsewhere, and prose is
-     * the only honest way to say "last attended" and "actually completed"
-     * without them collapsing into one misleading fact. Baked into
-     * [SeedData] like everything else biographical here — never fetched
-     * live, so there's nothing to keep in sync with a third party and
-     * nothing this app calls out to just to render a detail page. Null only
-     * if it hasn't been written yet for that person.
+     * sourcing bar and same hand-curated-static-fact pipeline as
+     * [birthDate]/[residence]: written once into `backend/holdings.json`
+     * and passed straight through by the backend on every snapshot (see
+     * `Subject.bio` in `snapshot_worker.py`), never fetched live from a
+     * third party. [SeedData] carries its own copy for the bundled offline
+     * fallback. Deliberately a single pre-written sentence or two rather
+     * than separate structured fields: several of these people left a
+     * *later* graduate program without finishing after completing an
+     * earlier degree elsewhere, and prose is the only honest way to say
+     * "last attended" and "actually completed" without them collapsing
+     * into one misleading fact. Null only if it hasn't been written yet
+     * for that person.
      */
     val bio: String? = null,
     /** Net worth in USD at [Snapshot.generatedAt]. */
@@ -169,28 +169,12 @@ data class Person(
      * their detail screen is open (see `GoogleNewsClient`, `rememberLiveNews`)
      * and prefers that live result; this list is only what's actually
      * rendered when that fetch hasn't returned anything yet, or comes back
-     * empty. Unlike [upcomingEvents], real news genuinely does have a free
-     * live source, which is why this one behaves differently.
+     * empty. This one has a free live source to poll — unlike a person's
+     * calendar, which nothing broadcasts — which is why there's no
+     * seed/snapshot-only equivalent field the way there used to be for
+     * public appearances.
      */
     val news: List<NewsItem> = emptyList(),
-    /**
-     * Publicly announced appearances — a keynote, an earnings call, a
-     * conference talk — sorted newest-first isn't the point here; the
-     * detail screen sorts and filters this to "soonest upcoming" at render
-     * time, the same way age is computed from [birthDate] instead of
-     * stored: an event
-     * drops off the list the moment its start time passes, with no new
-     * snapshot required for that bookkeeping.
-     *
-     * There is no live feed for this the way ADS-B/AIS exist for planes and
-     * boats — a person's calendar isn't broadcast — so every entry here is
-     * hand-curated from that event's own official page (the organizer's
-     * site, not a rumor or a "sources say" report) and only goes in once a
-     * date is actually announced, never estimated or forecast. See
-     * `upcomingEventsFor()` in `SeedData.kt` and the README's Events
-     * section for the sourcing bar this holds to.
-     */
-    val upcomingEvents: List<PublicEvent> = emptyList(),
     /**
      * Link to the person's profile on whatever platform they actually post to
      * (X, Bluesky, wherever). We link out rather than embedding — pulling live
@@ -353,24 +337,6 @@ data class PortStop(
     val arrivedAtEpoch: Long,
     /** Null if the vessel is still there. */
     val departedAtEpoch: Long? = null
-)
-
-/**
- * One publicly announced appearance. [startEpoch] is a real scheduled start
- * time from the organizer's own page — never a forecast. (An analyst's
- * "estimated" earnings-call date, for instance, doesn't qualify — see the
- * README's Events section for a concrete case that got left out for
- * exactly this reason.) [source] names who's actually publishing this —
- * "NVIDIA", "Meta" — the organizer, not a news outlet reporting on it.
- */
-@Serializable
-data class PublicEvent(
-    val title: String,
-    val venue: String? = null,
-    val city: String? = null,
-    val startEpoch: Long,
-    val url: String? = null,
-    val source: String
 )
 
 @Serializable

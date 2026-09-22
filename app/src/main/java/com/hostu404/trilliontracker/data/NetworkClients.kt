@@ -6,7 +6,7 @@ import java.util.concurrent.TimeUnit
 /**
  * One shared [OkHttpClient] — and, with it, one connection pool and one
  * background dispatcher thread pool — for every live client this app owns:
- * [StooqClient], [OpenSkyClient], [AdsbLolClient], [AirplanesLiveClient],
+ * [LiveQuoteClient], [OpenSkyClient], [AdsbLolClient], [AirplanesLiveClient],
  * [GoogleNewsClient]. Each of those used to build its own `OkHttpClient`,
  * which meant up to five separate thread pools/connection pools getting
  * spun up the moment each object was first touched — real, if modest,

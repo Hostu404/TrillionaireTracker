@@ -6,6 +6,7 @@ local.properties
 captures/
 .externalNativeBuild/
 .cxx/
+TT.File
 
 # Personal deployment checklist/notes — not project docs, never public.
 # See SETUP-NOTES.md itself for what belongs here.

@@ -18,12 +18,11 @@ object Config {
      *
      *     "https://hostu404.github.io/TrillionaireTracker/snapshot.json"
      *
-     * Left blank until then on purpose — pointing at a URL that isn't live
-     * yet just means an error chip on every launch instead of the seed
-     * data working quietly, which is a worse default than what this app
-     * ships with today.
+     * The workflow has now run successfully and Pages is serving real
+     * data, confirmed live against both the Pages CDN and
+     * raw.githubusercontent.com — so this is set for real:
      */
-    const val SNAPSHOT_URL: String = ""
+    const val SNAPSHOT_URL: String = "https://hostu404.github.io/TrillionaireTracker/snapshot.json"
 
     /** How often the client re-reads the CDN copy. */
     const val POLL_INTERVAL_SECONDS: Long = 60L
@@ -32,13 +31,14 @@ object Config {
     const val TICK_INTERVAL_MILLIS: Long = 80L
 
     /**
-     * How often the client asks Stooq for fresh stock prices to compute
-     * live net worth (see [Holdings], `StooqClient`, and
-     * `TrackerViewModel.startLiveWealthPolling`). One batched request for
-     * every tracked ticker at once, not one per person — matches the
-     * cadence [com.hostu404.trilliontracker.data.OpenSkyClient]'s own live
+     * How often the client asks Yahoo Finance for fresh stock prices to
+     * compute live net worth (see [Holdings], `LiveQuoteClient`, and
+     * `TrackerViewModel.startLiveWealthPolling`). One concurrent request
+     * per tracked ticker each pass, not one big batch — Yahoo's quote
+     * endpoint has no batch form — but this matches the cadence
+     * [com.hostu404.trilliontracker.data.OpenSkyClient]'s own live
      * position polling already uses for the same "actually feels live,
-     * still a tiny, keyless, rate-limit-friendly request" balance.
+     * still cheap and rate-limit-friendly" balance.
      */
     const val LIVE_WEALTH_POLL_INTERVAL_MILLIS: Long = 20_000L
 

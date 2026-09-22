@@ -211,11 +211,11 @@ snapshot architecture exists to avoid. Bluesky's API is free and keyless if you
 want to pull real posts for people who post there, but coverage for this cohort
 is thin, so link-out is the default.
 
-## Age, birthdate and residence
+## Age, birthdate, residence and bio
 
 Shown right under the name on the detail screen, next to the photo:
 
-- **`birthDate`** ("YYYY-MM-DD") is the one static fact in this trio — set
+- **`birthDate`** ("YYYY-MM-DD") is the one static fact in this group — set
   once in `holdings.json` and never touched again. **Age is not stored
   anywhere.** `Format.ageFrom()` computes it client-side from `birthDate`
   and the device's current date every time the screen renders, so it
@@ -226,16 +226,23 @@ Shown right under the name on the detail screen, next to the photo:
   that keeps flight/vessel location at airport/port granularity applies
   here for the same reason: precise enough to be informative, never
   precise enough to be a target.
-- Both are static, hand-curated fields in `holdings.json` (like `company`),
-  not fetched from anywhere — a birthdate and a home city don't change
-  often enough to justify a live lookup the way a Wikipedia photo does.
-  Leave `residence` out entirely rather than guess when public reporting on
-  where someone currently lives is stale or conflicting — see the
-  `residenceFor()` comment in `SeedData.kt` for two real examples from
-  researching the seed data (Larry Ellison's reported home turned out to
-  be Florida, not the Hawaiian island most coverage still associates with
-  him; Sergey Brin was mid-move with no settled address, so he has no
-  entry at all).
+- **`bio`** is one or two plain sentences — birthplace and the last school
+  or university actually attended, whether or not they finished it — shown
+  above the family history and wealth cards (see "Layout order" in
+  `PersonDetailScreen.kt`). Prose rather than separate fields on purpose:
+  several of this cohort left a *later* graduate program unfinished after
+  completing an earlier degree elsewhere, and prose is the only honest way
+  to say "last attended" without it silently reading as "graduated from."
+- All three are static, hand-curated fields in `holdings.json` (like
+  `company`), not fetched from anywhere — a birthdate, a home city and a
+  birthplace/education fact don't change often enough to justify a live
+  lookup the way a Wikipedia photo does. Leave `residence`/`bio` out
+  entirely rather than guess when public reporting is stale or
+  conflicting — see the `residenceFor()` comment in `SeedData.kt` for two
+  real examples from researching the seed data (Larry Ellison's reported
+  home turned out to be Florida, not the Hawaiian island most coverage
+  still associates with him; Sergey Brin was mid-move with no settled
+  address, so he has no entry at all).
 
 ## Wikipedia link and photo
 
@@ -329,40 +336,6 @@ SDK, no per-user API calls, same as every other screen here.
     `PortInfo.lat/lon`) are each place's own fixed, published reference
     point — the same one every aircraft or vessel that ever visits shares —
     not a live fix on any specific person.
-
-## Events
-
-Each detail screen can carry an "UPCOMING EVENTS" card — a keynote, an
-earnings call, a conference talk the person is publicly confirmed to be
-giving.
-
-- **There is no live feed for this**, unlike flights and vessels. ADS-B and
-  AIS broadcast constantly and can be polled; nobody broadcasts a person's
-  calendar. So `Person.upcomingEvents` is hand-curated in `holdings.json`
-  (`upcomingEventsFor()` in `SeedData.kt` for the bundled fallback) — the
-  same static-fact pattern as `birthDate`/`residence`, not a scraper or a
-  scheduled fetch.
-- **The bar is "the organizer's own page confirms it," full stop.** Not a
-  news article speculating about it, not a third-party earnings calendar's
-  "estimated" date. Two real examples from researching the seed data that
-  didn't clear that bar and were left out entirely rather than published as
-  a guess:
-  - Tesla's Q3 2026 earnings call is widely listed online as "Oct 21,
-    2026," but every listing marks it UNCONFIRMED — an analyst's forecast
-    from Tesla's past reporting pattern, not a date Tesla has announced.
-  - Oracle AI World 2026 (Oct 25-28, Las Vegas) is real and dated, but its
-    own keynote page lists Oracle's co-CEOs, not Larry Ellison — he moved
-    to Chairman/CTO in 2025. "Ellison keynotes Oracle's own conference"
-    was the obvious assumption and it was wrong; checked, not published.
-  - What did clear the bar: Mark Zuckerberg's Meta Connect 2026 keynote
-    (confirmed on meta.com, Sept 23, 2026) and Jensen Huang's NVIDIA GTC
-    Washington D.C. keynote (confirmed on nvidia.com, Dec 1, 2026).
-- **The list auto-updates the same way age does.** `startEpoch` is the one
-  fact that's stored; "upcoming" is computed client-side by comparing it to
-  the current time and sorting soonest-first (`Format.untilLabel()`,
-  `PersonDetailScreen.kt`). An event simply stops appearing the moment its
-  start time passes — no new snapshot needed for that, only for adding a
-  newly-announced one or removing a cancelled one.
 
 ## Backend
 

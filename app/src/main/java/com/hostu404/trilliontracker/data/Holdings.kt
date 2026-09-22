@@ -12,8 +12,8 @@ data class Holding(val ticker: String, val shares: Double)
  * The subset of `backend/holdings.json`'s per-person record this client
  * actually needs to compute a live total — just enough to reproduce
  * `backend/snapshot_worker.py`'s `net_worth()`, not the full record
- * (icaoHex/tail, true-tax-rate history, event sourcing, etc. stay
- * backend/[SeedData]-only, since nothing here needs them to price a stake).
+ * (icaoHex/tail, true-tax-rate history, etc. stay backend/[SeedData]-only,
+ * since nothing here needs them to price a stake).
  */
 data class HoldingsInfo(
     val holdings: List<Holding>,
@@ -65,8 +65,8 @@ object Holdings {
                 // SpaceX and xAI merged and the combined entity IPO'd on
                 // Nasdaq as SPCX in June 2026 (see backend/holdings.json's
                 // sourcing note) — a real quoted ticker now, not a
-                // hand-marked private stake. If Stooq doesn't actually carry
-                // it, this holding just won't price, and liveNetWorth()
+                // hand-marked private stake. If Yahoo Finance doesn't
+                // actually carry it, this holding just won't price, and liveNetWorth()
                 // below correctly returns null for Musk that pass rather
                 // than publish a partial total — he falls back to his seed
                 // drift exactly like anyone else with an unpriced holding.
@@ -87,7 +87,7 @@ object Holdings {
     /** Every person this client can ever compute a live figure for. */
     val trackedIds: Set<String> get() = byId.keys
 
-    /** Every ticker any tracked person holds, deduped — the one batched request per poll. */
+    /** Every ticker any tracked person holds, deduped — one concurrent request per ticker per poll. */
     val allTickers: List<String> = byId.values.flatMap { it.tickers }.distinct()
 
     /**
@@ -114,8 +114,8 @@ object Holdings {
      * the next generation of [LiveWealthAnchor]s. A person whose holdings
      * don't fully price this pass just keeps whatever anchor they already
      * had (or none, if they've never priced) rather than being reset — one
-     * missed poll (a transient rate limit, a network blip, Stooq briefly
-     * missing a symbol) shouldn't undo someone's live tracking, it should
+     * missed poll (a transient rate limit, a network blip, that one
+     * ticker's request failing) shouldn't undo someone's live tracking, it should
      * only skip that tick's update.
      *
      * The drift for a brand-new anchor (nothing for that id in [previous]

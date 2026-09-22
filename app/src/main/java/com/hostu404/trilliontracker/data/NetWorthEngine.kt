@@ -12,7 +12,7 @@ import kotlin.math.abs
  *
  * There's a second, fresher anchor now too: for anyone [Holdings] has a
  * priced holding set for, `TrackerViewModel` re-anchors a [LiveWealthAnchor]
- * on every client-side Stooq quote poll (see [StooqClient],
+ * on every client-side Yahoo Finance quote poll (see [LiveQuoteClient],
  * `Holdings.updateAnchors`) instead of waiting for the next backend/seed
  * snapshot. Same clamped extrapolation either way — see the two [project]
  * overloads below — just a different, more frequently refreshed source for
