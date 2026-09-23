@@ -9,8 +9,8 @@ An Android app, built with Kotlin and Jetpack Compose, that tracks the world's r
 ## Features
 
 - **Live net worth** — sum(shares × live price) + private stakes + cash − liabilities, from real SEC filings and live market/FX prices, ticking smoothly between polls. Currency-aware (a non-USD holding converts to USD via a live FX rate, never assumed). A real rolling 7-day price history, backfilled with real prices the moment a new person is tracked.
-- **Live flight tracking** — a real-time ADS-B position on the map while a tracked plane is airborne, with three free, keyless data sources and automatic fallback between them. Airport-level only, everywhere — never a raw coordinate.
-- **Vessel tracking** — the same idea for yachts via free AIS data, with no always-on server required. Port-level only, same privacy rule as flights.
+- **Live flight tracking** — a real-time ADS-B position on the map while a tracked plane is airborne, with three free, keyless data sources and automatic fallback between them. Airport-level only on the ground, never a raw coordinate — except a narrow, discussed case (added 2026-09-23): a real ground fix that matches no known airport shows an approximate area and a visibly distinct dashed-ring pin instead of just disappearing. See DESIGN.md for the exact scoping.
+- **Vessel tracking** — the same idea for yachts via free AIS data, with no always-on server required. Port-level only, with the same narrow approximate-area exception as flights (here for both moored and underway, since vessels have no separate live-position path).
 - **Time-by-location strip** — a chronological readout of how the tracked window splits across airports/ports, in-transit time, and signal gaps — one shared component for both flights and vessels.
 - **Biography & news** — birthdate (age computed live, never stored), city-level residence, a short sourced bio, a Wikipedia summary and free-license photo, and link-outs for news/social — nothing scraped or embedded live.
 - **Self-managing backend** — every time series (prices, flight/vessel history, the trillionaire-crossing log) trims itself to a real rolling 7 days automatically, so the data and the repo it lives in stay flat-sized forever.
@@ -44,10 +44,8 @@ See **[DESIGN.md](DESIGN.md)** for the step-by-step go-live checklist, the detai
 
 ## Known gaps
 
-- Seed data reflects the Forbes top ten as of Sep 2026 — a demo starting point, not a live feed.
 - Two of ten people's share counts (Dell, Ortega) are derived rather than filing-sourced, and aren't auto-monitored for drift the way the other eight are.
-- Ortega's yacht MMSI still needs adding to `holdings.json` by hand.
-- The AIS listener has never been run against the live aisstream.io service — watch its logs on first real run.
+- The AIS listener is now verified working against the live aisstream.io service (confirmed 2026-09-23 via a real scheduled run) — see DESIGN.md for details.
 - Everything tracked is already public information (SEC filings, ADS-B/AIS, Wikipedia, public social links) — never inferred or scraped from a private source. That limits how wrong the app can be, and also how much it will ever show.
 
 Full detail on all of the above: **[DESIGN.md](DESIGN.md)**.

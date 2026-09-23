@@ -767,6 +767,13 @@ private fun FlightCard(
             value = when {
                 flight.state == FlightState.ON_GROUND && flight.currentAirportIcao != null ->
                     label(flight.currentAirportIcao)
+                // Added 2026-09-23: a real fix landed, but no known airport
+                // nearby — see FlightStatus.currentLat's doc comment. Shown
+                // with the same "approximate" caveat the map pin carries,
+                // rather than silently falling through to "No signal" below
+                // for a position that was, in fact, caught.
+                flight.state == FlightState.ON_GROUND && flight.generalLocation != null ->
+                    "${flight.generalLocation} (approximate — no known airport nearby)"
                 flight.state == FlightState.AIRBORNE -> "In the air — no fixed location"
                 signalLost && flight.probableIcao != null ->
                     "Possibly landed near ${label(flight.probableIcao)} (unconfirmed)"
@@ -972,6 +979,13 @@ private fun BoatCard(
             value = when {
                 vessel.state == VesselState.IN_PORT && vessel.currentPortUnlocode != null ->
                     label(vessel.currentPortUnlocode)
+                // Added 2026-09-23: a real AIS fix (moored or underway) that
+                // didn't resolve to a known port — see VesselStatus.currentLat's
+                // doc comment. Checked before the plain UNDERWAY branch below
+                // so a real underway position is shown when we have one,
+                // rather than always reading "no fixed location".
+                vessel.generalLocation != null ->
+                    "${vessel.generalLocation} (approximate — no known port nearby)"
                 vessel.state == VesselState.UNDERWAY -> "At sea — no fixed location"
                 else -> "No signal"
             }
@@ -1191,17 +1205,39 @@ private fun flightMapPin(
         flight.currentAirportIcao
     } else {
         flight.recentStops.firstOrNull()?.icao ?: flight.arrivedIcao ?: flight.departedIcao
-    } ?: return null
-    val info = airports[icao] ?: return null
-    val lat = info.lat ?: return null
-    val lon = info.lon ?: return null
-    val caption = if (isLive) {
-        "on the ground now"
-    } else when (flight.state) {
-        FlightState.AIRBORNE -> "airborne now — no live signal yet, last known ground position"
-        else -> "no current signal — last known position"
     }
-    return MapPin(label = info.label, lat = lat, lon = lon, glyph = "✈", isLive = isLive, caption = caption)
+    val info = icao?.let { airports[it] }
+    val lat = info?.lat
+    val lon = info?.lon
+    if (icao != null && lat != null && lon != null) {
+        val caption = if (isLive) {
+            "on the ground now"
+        } else when (flight.state) {
+            FlightState.AIRBORNE -> "airborne now — no live signal yet, last known ground position"
+            else -> "no current signal — last known position"
+        }
+        return MapPin(label = info.label, lat = lat, lon = lon, glyph = "✈", isLive = isLive, caption = caption)
+    }
+
+    // Fallback added 2026-09-23 — a real ON_GROUND fix that didn't resolve
+    // to any known airport (see FlightStatus.currentLat's doc comment).
+    // Rather than showing nothing, plot the raw position with a coarse
+    // place name, clearly flagged as approximate (see MapPin.isApproximate).
+    val fallbackLat = flight.currentLat
+    val fallbackLon = flight.currentLon
+    val fallbackLocation = flight.generalLocation
+    if (fallbackLat != null && fallbackLon != null && fallbackLocation != null) {
+        return MapPin(
+            label = fallbackLocation,
+            lat = fallbackLat,
+            lon = fallbackLon,
+            glyph = "✈",
+            isLive = false,
+            caption = "on the ground now — no known airport nearby, approximate area only",
+            isApproximate = true
+        )
+    }
+    return null
 }
 
 /** The maritime mirror of [flightMapPin] — see [VesselStatus] and [MapPin]. */
@@ -1212,17 +1248,43 @@ private fun vesselMapPin(vessel: VesselStatus?, ports: Map<String, PortInfo>): M
         vessel.currentPortUnlocode
     } else {
         vessel.recentStops.firstOrNull()?.unlocode ?: vessel.arrivedPortUnlocode ?: vessel.departedPortUnlocode
-    } ?: return null
-    val info = ports[code] ?: return null
-    val lat = info.lat ?: return null
-    val lon = info.lon ?: return null
-    val caption = if (isLive) {
-        "in port now"
-    } else when (vessel.state) {
-        VesselState.UNDERWAY -> "underway now — last known port, not live"
-        else -> "no current signal — last known position"
     }
-    return MapPin(label = info.label, lat = lat, lon = lon, glyph = "⚓", isLive = isLive, caption = caption)
+    val info = code?.let { ports[it] }
+    val lat = info?.lat
+    val lon = info?.lon
+    if (code != null && lat != null && lon != null) {
+        val caption = if (isLive) {
+            "in port now"
+        } else when (vessel.state) {
+            VesselState.UNDERWAY -> "underway now — last known port, not live"
+            else -> "no current signal — last known position"
+        }
+        return MapPin(label = info.label, lat = lat, lon = lon, glyph = "⚓", isLive = isLive, caption = caption)
+    }
+
+    // Fallback added 2026-09-23 — a real AIS fix (moored or underway) that
+    // didn't resolve to any known port (see VesselStatus.currentLat's doc
+    // comment). Rather than showing nothing, plot the raw position with a
+    // coarse place name, clearly flagged as approximate (see MapPin.isApproximate).
+    val fallbackLat = vessel.currentLat
+    val fallbackLon = vessel.currentLon
+    val fallbackLocation = vessel.generalLocation
+    if (fallbackLat != null && fallbackLon != null && fallbackLocation != null) {
+        val caption = when (vessel.state) {
+            VesselState.UNDERWAY -> "underway now — no known port nearby, approximate area only"
+            else -> "in port now — no known port nearby, approximate area only"
+        }
+        return MapPin(
+            label = fallbackLocation,
+            lat = fallbackLat,
+            lon = fallbackLon,
+            glyph = "⚓",
+            isLive = false,
+            caption = caption,
+            isApproximate = true
+        )
+    }
+    return null
 }
 
 /** Sentinel buckets get a fixed status-style treatment; real airports get identity colors. */

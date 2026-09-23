@@ -237,12 +237,32 @@ data class FlightStatus(
     val lastSeenEpoch: Long = 0L,
     val liveMapUrl: String? = null,
     /**
-     * Where it's sitting right now — airport granularity only, never a
-     * coordinate. Null while airborne: "no current location" is the honest
-     * answer for a plane in the air, not a live lat/lon we could publish
-     * instead.
+     * Where it's sitting right now — airport granularity when it resolves.
+     * Null while airborne: "no current location" is the honest answer for a
+     * plane in the air (its live position reaches the client through a
+     * completely separate path — see LiveFlightTracker — never this field).
+     * Also null on the ground when [currentLat]/[currentLon] are set
+     * instead (see those fields) — the two are mutually exclusive.
      */
     val currentAirportIcao: String? = null,
+    /**
+     * Raw ADS-B position, added 2026-09-23 — the one deliberate exception
+     * to "airport granularity only, never a coordinate." Set only when
+     * [state] is ON_GROUND and the position didn't resolve to any known
+     * airport (see [currentAirportIcao]), so a real fix doesn't just vanish
+     * into "no signal". Always paired with [generalLocation]. Current-
+     * snapshot only — never appears in [recentStops].
+     */
+    val currentLat: Double? = null,
+    val currentLon: Double? = null,
+    /**
+     * Coarse, human-readable place name for [currentLat]/[currentLon] — a
+     * country ("France"), "off the coast of X", or an ocean/sea name as a
+     * last resort. Never null when the coordinate fields are set. See
+     * `general_location()` in snapshot_worker.py for exactly how it's
+     * derived and the privacy tradeoff it represents.
+     */
+    val generalLocation: String? = null,
     /**
      * Airport stops over the trailing 7 days, newest first. This is the
      * granularity every public jet-tracking site already operates at — which
@@ -316,8 +336,8 @@ enum class FlightState { AIRBORNE, ON_GROUND, UNKNOWN }
  * only ever shown as [selfReportedDestination], clearly labeled as
  * crew-entered and unverified (it's routinely blank, stale, or informal
  * shorthand), never presented as a confirmed plan. Position is port
- * granularity only, exactly like [FlightStatus.currentAirportIcao] — never
- * a raw lat/lon, live or historical.
+ * granularity when it resolves, exactly like [FlightStatus.currentAirportIcao]
+ * — with the same one exception that field now has: see [currentLat].
  */
 @Serializable
 data class VesselStatus(
@@ -337,8 +357,30 @@ data class VesselStatus(
     val selfReportedDestination: String? = null,
     val lastSeenEpoch: Long = 0L,
     val liveMapUrl: String? = null,
-    /** Port granularity only, never a coordinate. Null while underway. */
+    /**
+     * Port granularity when it resolves. Null while underway, and also null
+     * when moored/underway with a fresh fix that didn't resolve to any
+     * known port — see [currentLat] for that case instead.
+     */
     val currentPortUnlocode: String? = null,
+    /**
+     * Raw AIS position, added 2026-09-23 — the one deliberate exception to
+     * "port granularity only, never a coordinate." Set whenever there's a
+     * fresh position (moored or underway) that didn't resolve to a known
+     * port, so a real fix doesn't just vanish into "no signal". Always
+     * paired with [generalLocation]. Current-snapshot only — never appears
+     * in [recentStops]. See `general_location()`/the comment above
+     * `nearest_port()` in snapshot_worker.py for the full rationale and the
+     * privacy tradeoff this represents.
+     */
+    val currentLat: Double? = null,
+    val currentLon: Double? = null,
+    /**
+     * Coarse, human-readable place name for [currentLat]/[currentLon] — a
+     * country, "off the coast of X", or an ocean/sea name as a last resort.
+     * Never null when the coordinate fields are set.
+     */
+    val generalLocation: String? = null,
     /**
      * Port stops over the trailing 7 days, newest first — see [AirportStop].
      */

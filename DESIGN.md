@@ -30,7 +30,9 @@ History and day-change are computed from real timestamps, not an assumed cadence
 | Location history | trailing 7 days, airport stops only | ADS-B |
 | Live map dot | real-time, only while a detail screen has this tail airborne | OpenSky → adsb.lol → airplanes.live |
 
-**Current location and history are airport-level, never coordinates.** `currentAirportIcao` is null while airborne — "no fixed location" is the honest answer for a plane in the air. `recentStops` is a rolling 7-day list of airports touched, each with arrival/departure time. This is the granularity every public jet-tracking site already operates at; a precise position trail would be a meaningfully worse version of the same risk `estimatedDestinationIcao` already treats carefully, so this app doesn't produce one.
+**Current location and history are airport-level, never coordinates — with one narrow, discussed exception.** `currentAirportIcao` is null while airborne — "no fixed location" is the honest answer for a plane in the air. `recentStops` is a rolling 7-day list of airports touched, each with arrival/departure time, and this historical record is never given a raw coordinate, full stop. This is the granularity every public jet-tracking site already operates at; a precise historical position trail would be a meaningfully worse version of the same risk `estimatedDestinationIcao` already treats carefully, so this app doesn't produce one.
+
+The exception, added 2026-09-23: when a real ADS-B fix lands the aircraft ON_GROUND somewhere with no matching airport in `airports.csv` at all, that used to just vanish into "No signal" — technically honest (nothing *known* matched), but also technically wrong (a real position genuinely was caught). `currentLat`/`currentLon`/`generalLocation` now carry that raw fix through instead, current-pass only, never written into `recentStops` or persisted in `state.json`, and always rendered with a visibly distinct "approximate" marker on the map (a dashed ring, not the normal solid/hollow pin — see `MapPin.isApproximate` in `WorldMapCard.kt`) and an "(approximate — no known airport nearby)" caption in the card text. This was a deliberate, discussed tradeoff, not a default: the alternative was a real catch quietly disappearing, which is its own kind of dishonesty about what the app actually knows. It does not apply while AIRBORNE — that live position already reaches the client through a completely separate, non-persisted path (see below), and adding a second, *committed-to-git-every-few-minutes* copy of an in-flight coordinate would be a materially bigger and more permanent exposure than a single current-pass ground fix.
 
 **Airport codes are never shown raw.** Every airport-facing field resolves through `Snapshot.airports` (built by `airport_label()`, e.g. `KAUS` → "Austin, TX") before reaching a screen, falling back to the raw ICAO only if there's no match.
 
@@ -51,7 +53,7 @@ The maritime mirror of Flights — same privacy shape, and mostly the same code 
 
 **Vessels broadcast AIS, not ADS-B — same idea, different transport, and no free "ask, get an answer" API that covers open water the way `adsb.lol` does for planes.** The free tier that actually works globally (`aisstream.io`) is a persistent WebSocket subscription, not a poll — but aisstream.io itself is free either way; only the two ways of *hosting* the listener differ in whether they need a server of your own.
 
-**Option A — free, no server (recommended default).** `backend/ais_listener.py` supports a burst mode: set `AIS_BURST_SECONDS`, and it connects, subscribes, listens for that window, saves whatever came in, and exits — no always-on process needed. `.github/workflows/ais.yml` runs this on the same free 5-minute Actions cron as `snapshot.yml`, reading the `AISSTREAM_API_KEY` repo secret (free at aisstream.io/authenticate). Without that secret set, the workflow skips itself rather than failing. This catches only whatever a vessel transmits during the ~45s window, so think "refreshed every 5 minutes," not instant. `snapshot_worker.py` only ever reads the resulting `ais_cache.json` — zero extra network calls of its own.
+**Option A — free, no server (recommended default).** `backend/ais_listener.py` supports a burst mode: set `AIS_BURST_SECONDS`, and it connects, subscribes, listens for that window, saves whatever came in, and exits — no always-on process needed. `.github/workflows/ais.yml` runs this on the same free 5-minute Actions cron as `snapshot.yml`, reading the `AISSTREAM_API_KEY` repo secret (free at aisstream.io/authenticate). Without that secret set, the workflow skips itself rather than failing. This catches only whatever a vessel transmits during the listening window — currently 270 seconds (`AIS_BURST_SECONDS`, raised from an initial 45s) — so think "refreshed every 5 minutes," not instant. `snapshot_worker.py` only ever reads the resulting `ais_cache.json` — zero extra network calls of its own.
 
 **Option B — continuous, tighter freshness, needs your own always-on box.** If you already have somewhere that stays on 24/7, run the listener without `AIS_BURST_SECONDS` set, kept running, **not** on the same cron as `snapshot_worker.py`:
 
@@ -62,9 +64,9 @@ export AISSTREAM_API_KEY=...
 python3 ais_listener.py
 ```
 
-Either way it only subscribes to MMSIs actually listed in `holdings.json` (up to 200), never the whole ocean. It was written against aisstream.io's published docs, not exercised against the live service — worth watching its logs the first time you run it for real.
+Either way it only subscribes to MMSIs actually listed in `holdings.json` (up to 200), never the whole ocean. Verified working against the live service as of 2026-09-23 (see Known gaps below) — a real scheduled run connected, subscribed, and wrote back an actual position report for one tracked yacht.
 
-Everything else follows the flight pattern: port granularity only (never a coordinate, live or historical); a time-by-location strip in the same shared component, using `IN_PORT`/`UNDERWAY`/`NO_SIGNAL` states and port UNLOCODEs; `selfReportedDestination` (AIS's one edge over ADS-B — a real destination field, but free text the crew types in, routinely blank/stale/informal, always shown with that caveat); `vesselVerified`, same unguessed-identity rule as `tailVerified`. Optionally drop a `ports.csv` beside `snapshot_worker.py` for real port names (see `load_ports()`'s docstring) — you only need the handful of ports your tracked yachts actually visit. The seed/demo snapshot carries real MMSIs for five people, cross-corroborated the same way the flight seed data is; Musk, Dell, Huang, Ballmer, and Page have no yacht entry. The first four turned up nothing confidently linked; Page's entry was removed on 2026-09-22 — `SeedData.kt` had been carrying his old "SENSES" yacht (MMSI 319833000), but Boat International's tech-billionaire yacht roundup states that boat was sold by Page to an unknown buyer in 2020, and superyachtfan.com's own SENSES page corroborates this by naming its current owner as Andrea Recordati, an unrelated Italian pharma billionaire. Tracking that MMSI under Page's name would have quietly attributed Recordati's boat movements to him, which is worse than showing no vessel at all, so it was pulled from both `holdings.json` and the Kotlin seed data rather than left in.
+Everything else follows the flight pattern: port granularity — with the same one narrow exception the Flights section above now documents in full: a real, fresh AIS fix (moored or underway) that doesn't resolve to a known port surfaces as an approximate `currentLat`/`currentLon` + `generalLocation` instead of vanishing into "no signal", current-pass only, never written into `recentStops` or `state.json`, always shown with a visibly distinct dashed-ring pin and an "approximate" caption. Vessels get this in both moored and underway states (unlike flights, which only get it ON_GROUND) — a boat genuinely never gets a live position source the way an airborne plane's `LiveFlightTracker` does, so an underway AIS fix that doesn't match a port is the closest thing to "live" this feature can ever show for one, and withholding it would mean underway boats basically never show a position at all. A time-by-location strip in the same shared component, using `IN_PORT`/`UNDERWAY`/`NO_SIGNAL` states and port UNLOCODEs; `selfReportedDestination` (AIS's one edge over ADS-B — a real destination field, but free text the crew types in, routinely blank/stale/informal, always shown with that caveat); `vesselVerified`, same unguessed-identity rule as `tailVerified`. `backend/ports.csv` (added 2026-09-23) gives `nearest_port()` something to resolve an AIS position against — without it, a caught position never turns into a place: an early live run genuinely caught a real position for Ellison's MUSASHI, and the app still showed "No signal" and no map pin, because `load_ports()` had nothing to match it to. Rather than hand-curate just the handful of ports the current demo roster's yachts visit, `ports.csv` covers all 16,666 UN/LOCODE-listed seaports worldwide that have usable coordinates — filtered from `cristan/improved-un-locodes`' `code-list-improved.csv` (a fork of the official `datasets/un-locode` release, itself sourced from UNECE's UN/LOCODE with coordinates cross-checked against OpenStreetMap/Wikidata) down to entries whose Function code marks them as a sea/maritime port and whose UN/LOCODE status isn't rejected or slated for removal. Same shape and source lineage as `airports.csv` next to it (also a full global file, not a hand-picked subset — OurAirports' complete large/medium/small airport list, auto-fetched by the worker itself on first run). See that CSV's own header for the exact filter; re-running the same fetch-and-filter picks up whatever the upstream dataset corrects over time. The seed/demo snapshot carries real MMSIs for five people, cross-corroborated the same way the flight seed data is; Musk, Dell, Huang, Ballmer, and Page have no yacht entry. The first four turned up nothing confidently linked; Page's entry was removed on 2026-09-22 — `SeedData.kt` had been carrying his old "SENSES" yacht (MMSI 319833000), but Boat International's tech-billionaire yacht roundup states that boat was sold by Page to an unknown buyer in 2020, and superyachtfan.com's own SENSES page corroborates this by naming its current owner as Andrea Recordati, an unrelated Italian pharma billionaire. Tracking that MMSI under Page's name would have quietly attributed Recordati's boat movements to him, which is worse than showing no vessel at all, so it was pulled from both `holdings.json` and the Kotlin seed data rather than left in.
 
 ## Social, biography, and news
 
@@ -82,7 +84,7 @@ All three are left out entirely rather than guessed when public reporting is sta
 
 ## Map
 
-Each detail screen carries a self-drawn Jetpack Compose `Canvas` world map — no WebView, no maps SDK, no per-user API calls. Country outlines come from Natural Earth's public-domain Admin-0 boundaries, bundled as a flat ~125KB JSON asset with no network call involved. Country names only render once zoomed in (world-view scale with all 177 at once is unreadable). Pins are never a live position except the one documented exception (a currently-airborne plane with a live ADS-B fix, see Flights above) — otherwise a pin is either solid (confirmed at that airport/port right now) or hollow "last known" (airborne/underway/signal lost), and the caption always says which.
+Each detail screen carries a self-drawn Jetpack Compose `Canvas` world map — no WebView, no maps SDK, no per-user API calls. Country outlines come from Natural Earth's public-domain Admin-0 boundaries, bundled as a flat ~125KB JSON asset with no network call involved (this exact file, `app/src/main/assets/world_countries.json`, is also what the backend's `general_location()` reverse-geocodes against — see Flights/Vessels above — so the client's map and the backend's coarse place names are always drawn from the same 177-country set, not two that could drift apart). Country names only render once zoomed in (world-view scale with all 177 at once is unreadable). A pin is one of three things, each visually distinct so confidence level is legible at a glance without reading the caption: solid (confirmed at that airport/port right now), hollow "last known" (airborne/underway/signal lost), or, added 2026-09-23, a dashed ring — a real position that didn't resolve to any known airport/port, labeled with a coarse place name instead (`MapPin.isApproximate` in `WorldMapCard.kt`; see Flights/Vessels above for the backend side). The one still-live position — a currently-airborne plane with a live ADS-B fix — remains the sole exception that was never stored anywhere, current-pass fallback fields included.
 
 ## Backend
 
@@ -106,7 +108,7 @@ Swap `fetch_quotes()` for Finnhub or Twelve Data if you want intraday granularit
 6. Point the app at it — set `Config.SNAPSHOT_URL` to that same URL and rebuild. Nothing else changes.
 7. For vessels, add an `AISSTREAM_API_KEY` repo secret (free at aisstream.io/authenticate → Settings → Secrets and variables → Actions → New repository secret). Without it, `.github/workflows/ais.yml` runs but skips itself every time rather than failing, and every vessel just reads as no signal.
 
-`.github/workflows/ais.yml` can't be created by pushing through most remote/automated tooling — GitHub blocks writes into `.github/workflows/` from exactly that kind of access, for the obvious reason that nobody wants a remote tool able to silently plant CI that runs with a repo's secrets. Create it by hand at that path with this content, and it'll pick up the same 5-minute cron `snapshot.yml` uses:
+`.github/workflows/ais.yml` can't be created by pushing through most remote/automated tooling — GitHub blocks writes into `.github/workflows/` from exactly that kind of access, for the obvious reason that nobody wants a remote tool able to silently plant CI that runs with a repo's secrets. Create it by hand at that path with this content, and it'll pick up the same 5-minute cron `snapshot.yml` uses (this is the actual currently-deployed version, kept in sync here — see the `AIS_BURST_SECONDS` value and the commit step's retry logic below, both added after the workflow's first version):
 
 ```yaml
 name: Refresh AIS cache
@@ -135,7 +137,7 @@ jobs:
       - name: Burst-listen for AIS updates
         env:
           AISSTREAM_API_KEY: ${{ secrets.AISSTREAM_API_KEY }}
-          AIS_BURST_SECONDS: "45"
+          AIS_BURST_SECONDS: "270"
         run: |
           if [ -z "$AISSTREAM_API_KEY" ]; then
             echo "AISSTREAM_API_KEY repo secret not set — skipping this run." \
@@ -149,13 +151,51 @@ jobs:
         run: |
           git config user.name "ais-bot"
           git config user.email "actions@users.noreply.github.com"
+          # ais_listener.py only writes backend/ais_cache.json when a tracked
+          # vessel's message actually arrives during the burst window — a
+          # quiet burst (no AIS traffic heard for any tracked MMSI in the
+          # listening window, which is normal and expected, not an error)
+          # means the file never gets created at all. `git add` on a
+          # nonexistent path fails the whole job, so check first and treat
+          # "nothing heard" as the ordinary no-op it is, same as an unpriced
+          # ticker just gets skipped in snapshot_worker.py rather than
+          # failing that job.
+          if [ ! -f backend/ais_cache.json ]; then
+            echo "No AIS traffic heard for any tracked vessel this burst — nothing to commit."
+            exit 0
+          fi
           git add backend/ais_cache.json
           if git diff --cached --quiet; then
             echo "nothing changed, skipping commit"
-          else
-            git commit -m "Refresh AIS cache ($(date -u +%Y-%m-%dT%H:%M:%SZ))"
-            git push
+            exit 0
           fi
+          git commit -m "Refresh AIS cache ($(date -u +%Y-%m-%dT%H:%M:%SZ))"
+
+          # This job and snapshot.yml both run on the same 5-minute cron and
+          # both push straight to main. concurrency: only serializes runs of
+          # THIS workflow against each other — it does nothing for a push
+          # landing on main from the other workflow at the same moment, which
+          # is exactly the "! [rejected] main -> main (fetch first)" failure
+          # this was written to fix. Rebasing this one commit onto whatever
+          # just landed and retrying the push turns that race into a self-
+          # healing no-op instead of a failed run, since the two workflows
+          # never touch the same files (this one only ever writes
+          # backend/ais_cache.json), so the rebase itself can't conflict.
+          for attempt in 1 2 3 4 5; do
+            if git push; then
+              exit 0
+            fi
+            echo "push rejected (attempt $attempt/5) — another workflow committed first, rebasing onto origin/main and retrying"
+            git fetch origin main
+            if ! git rebase origin/main; then
+              echo "rebase hit a real conflict — bailing out rather than pushing something broken; next scheduled run will pick this up"
+              git rebase --abort
+              exit 1
+            fi
+            sleep $((RANDOM % 5 + 1))
+          done
+          echo "push still rejected after 5 retries — giving up this run; next scheduled run will retry"
+          exit 1
 ```
 
 Optionally, also set an `EDGAR_USER_AGENT` repository variable (Settings → Secrets and variables → Actions → Variables) to something like `"YourProjectName (your-real-email@example.com)"` — works fine without it (falls back to a generic default in `edgar_check.py`), but SEC's fair-access guidance prefers a real contact.
@@ -172,11 +212,13 @@ Optionally, also set an `EDGAR_USER_AGENT` repository variable (Settings → Sec
 - **Depth (elevation shadow) is reserved for genuinely interactive panel/row/chip elements**, added via `hudTouchable(elevation = ...)` (a real `Modifier.shadow`, not another canvas trick — see `HudDecorations.kt`) so a tap target visibly sits above the surface it's on. It is not applied to plain text links or to purely decorative panels, for the same reason those don't get corner ticks either.
 - **Honeycomb backdrop tiling was tried and removed.** An earlier pass added a tileable hex-grid background (`honeycombBackdrop()` in `HudDecorations.kt`) behind most cards; it visually bled past its own element's bounds into neighboring cards and the gaps between them (Compose's `drawBehind`/`drawWithContent` don't auto-clip to a composable's layout box) and was judged too busy even after that was fixed with `clipRect`. The function is still defined but unused everywhere. What stayed: `honeycombGlowCell()`, a small persistent glow used as a status layer (e.g., an amber/critical tint on a flight or vessel card) — this was never about decoration, only about surfacing a real state, so it survived the honeycomb removal on every card that uses it.
 - **"Tracking," not "Live."** A person's wealth card and leaderboard row used to show a pulsing "LIVE" chip whenever a real market-price anchor existed for them — which stays true straight through market close, so a dead-flat sparkline sitting next to "LIVE" read as the app being broken. The label was renamed to "TRACKING" everywhere (it only ever meant "we have a real anchor for this person," not "actively moving right now"), and `isSparklineFlat()` (in `Sparkline.kt`) separately detects a flat trailing window (last 6 points, exact equality, no market-hours calendar needed) and mutes the line color plus swaps the caption to "flat · market's closed right now" so a closed market reads as an explained state, not a bug.
+- **A dashed pin means "approximate," on purpose.** Added 2026-09-23 alongside the `currentLat`/`currentLon`/`generalLocation` fallback (see Flights/Vessels above): a solid pin means confirmed-at-that-airport/port-right-now, a hollow ring means last-known-not-live, and a new dashed ring means neither — a real fix landed, but nothing known matched it, so the pin and its label (a coarse place name, never the raw numbers) are honestly less certain than the other two. Three visually distinct styles rather than reusing one of the existing two, so reduced confidence is legible on the map itself, not just buried in caption text someone has to read.
 
 ## Known gaps, in detail
 
 - Seed figures are the Forbes top ten as of 1 Sep 2026 and are a demo starting point, not a live feed.
 - `holdings.json` has all ten people filled in (Dell and Ortega were the last two added, both live-ticker-trackable: `DELL` and Madrid-listed `ITX.MC`). `edgar-check.yml` only monitors the eight people with an `edgarCik` set for filing drift — Dell's and Ortega's share counts are derived (a reported percentage × shares outstanding, not a filing figure directly) and need re-verifying by hand periodically.
-- Ortega's yacht (`DRIZZLE`, per `SeedData.kt`) has no `mmsi` in `holdings.json` yet — the real MMSI lives only in the Kotlin seed file and needs copying over by hand.
-- `ais_listener.py` was written against aisstream.io's documentation, not tested against the live WebSocket service — true of both continuous and burst mode, which share the same message-handling code. Its message parsing and the backend logic that consumes its output are both unit-tested against mocked data; the actual connect/subscribe/stream round-trip against the real service hasn't been exercised end to end.
+- Ortega's yacht (`DRIZZLE`) now has its `mmsi` (256867000) copied into `holdings.json` (2026-09-23, from `SeedData.kt`'s existing value) — this was open as of the previous pass and is now closed.
+- `backend/ports.csv` was added 2026-09-23 (16,666 UN/LOCODE seaports, see the Vessels section above for sourcing) after a real live-service catch of Ellison's MUSASHI position exposed the gap: without a ports file, `nearest_port()` had nothing to match a real position against, so a genuinely-received AIS position still showed as "No signal" with no map pin. Confirmed the demo roster's ports (`MCMON`, `NZAKL`, `USFLL`, and the rest) are all present in the file.
+- `ais_listener.py` has now been verified against the live aisstream.io service in burst mode (this used to say it hadn't been). Checked 2026-09-23 against the repo's own Actions history: run #202 of `.github/workflows/ais.yml` connected, subscribed to the 4 MMSIs currently in `holdings.json`, ran its full listening window, and exited clean with no errors; `backend/ais_cache.json` on `main` holds a real position report it received that run for Ellison's MUSASHI (MMSI 319032600, timestamped 2026-09-23 08:31:58 UTC) — a live-service round trip, not just a clean connect. Burst mode and continuous mode still share the same message-handling code, so this covers both. What's *not* yet exercised: an aisstream.io outage or malformed-message response, since only normal operation has been observed so far.
 - **Everything this app shows is already public.** Share counts come from public SEC filings, positions come from public ADS-B/AIS broadcasts, and biography/photo/news are public Wikipedia and social-link-outs — nothing is inferred, scraped from a private source, or derived from anything the tracked person hasn't already made publicly available. That bounds this project in both directions: it can never be more wrong than the public record it reads from (a bad number here is a stale or misfiled public figure, not a guess), and it can never show more than the public record already does — no private itinerary, no non-public holding, no address more precise than a city. The Larry Page yacht correction above (`SeedData.kt`/`holdings.json`, 2026-09-22) is a concrete example of this rule working as intended: once public sourcing showed the old attribution was wrong, the entry was pulled rather than left in or guessed at.
