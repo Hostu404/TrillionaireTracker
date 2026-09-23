@@ -629,11 +629,22 @@ def flight_status(subject: Subject, prev: dict, airports, countries, now: int) -
             memory["arrived_at"] = now
         memory["last_ground_icao"] = here or memory.get("last_ground_icao")
 
-        # Open a new stop on arrival, and also on the very first observation —
-        # we can't know the true arrival time for a plane already parked when
-        # the worker started, so "now" is the honest starting point.
-        no_open_stop = not stops or stops[-1].get("departed") is not None
-        if here and (was == "AIRBORNE" or (was is None and no_open_stop)):
+        # Open a new stop on arrival, on the very first observation (we
+        # can't know the true arrival time for a plane already parked when
+        # the worker started, so "now" is the honest starting point), and
+        # also whenever the currently-open stop doesn't match this pass's
+        # real airport match — the real case this catches: a plane sits
+        # ON_GROUND the whole time with no AIRBORNE transition while `here`
+        # was unresolvable (no match in airports.csv, or borderline
+        # matching), so no stop ever opened; once a later pass resolves a
+        # real ICAO for the same unmoved aircraft, this makes sure
+        # currentAirportIcao actually picks it up instead of silently
+        # staying null forever just because the plane never left in
+        # between. A genuinely open, already-matching stop is left alone.
+        open_stop = stops[-1] if stops and stops[-1].get("departed") is None else None
+        if here and (open_stop is None or open_stop.get("icao") != here):
+            if open_stop is not None:
+                open_stop["departed"] = now
             stops.append({"icao": here, "arrived": now, "departed": None})
 
     # Trailing 7 days only. A stop still counts if it's still open, or was
@@ -1142,8 +1153,17 @@ def vessel_status(subject: Subject, prev: dict, ports, ais_cache: dict, countrie
             memory["arrived_at"] = now
         memory["last_port"] = here or memory.get("last_port")
 
-        no_open_stop = not stops or stops[-1].get("departed") is not None
-        if here and (was == "UNDERWAY" or (was is None and no_open_stop)):
+        # Same generalized condition as flight_status()'s equivalent block
+        # above (see its comment) — this is the exact bug that let a real,
+        # freshly-caught AIS fix (Ellison's MUSASHI) sit matched to a real
+        # port in locationBreakdown/last_port while currentPortUnlocode and
+        # the map pin stayed stuck on null, because the vessel had been
+        # sitting IN_PORT with no match ever since before ports.csv existed
+        # and never once went UNDERWAY to trigger the old arrival check.
+        open_stop = stops[-1] if stops and stops[-1].get("departed") is None else None
+        if here and (open_stop is None or open_stop.get("unlocode") != here):
+            if open_stop is not None:
+                open_stop["departed"] = now
             stops.append({"unlocode": here, "arrived": now, "departed": None})
 
     cutoff = now - HISTORY_WINDOW_SECONDS
