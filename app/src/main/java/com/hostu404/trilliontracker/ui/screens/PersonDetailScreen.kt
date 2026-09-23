@@ -25,6 +25,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.BiasAlignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -70,11 +71,14 @@ import com.hostu404.trilliontracker.ui.components.MapPin
 import com.hostu404.trilliontracker.ui.components.NoteChip
 import com.hostu404.trilliontracker.ui.components.TimelineSegment
 import com.hostu404.trilliontracker.ui.components.TimelineStrip
+import com.hostu404.trilliontracker.ui.components.honeycombGlowCell
 import com.hostu404.trilliontracker.ui.components.hudCorners
+import com.hostu404.trilliontracker.ui.components.hudTouchable
 import com.hostu404.trilliontracker.ui.components.sickeningChromaticAberration
 import com.hostu404.trilliontracker.ui.components.RollingNumber
 import com.hostu404.trilliontracker.ui.components.Sparkline
 import com.hostu404.trilliontracker.ui.components.StatusChip
+import com.hostu404.trilliontracker.ui.components.isSparklineFlat
 import com.hostu404.trilliontracker.ui.components.ThresholdGauge
 import com.hostu404.trilliontracker.ui.components.WorldMapCard
 import com.hostu404.trilliontracker.ui.theme.TT
@@ -186,8 +190,14 @@ fun PersonDetailScreen(
                     Modifier
                         .fillMaxWidth()
                         .background(TT.surface, TT.panelShape(14.dp))
+                        .then(
+                            if (projected >= threshold) {
+                                Modifier.honeycombGlowCell(xFraction = 0.5f, yFraction = 0.12f, color = TT.good)
+                            } else {
+                                Modifier
+                            }
+                        )
                         .border(1.dp, TT.border, TT.panelShape(14.dp))
-                        .hudCorners()
                         .padding(14.dp)
                 ) {
                     RollingNumber(
@@ -209,7 +219,7 @@ fun PersonDetailScreen(
                         )
                         if (state.isLive(person.id)) {
                             Spacer(Modifier.width(8.dp))
-                            StatusChip(glyph = "●", label = "LIVE · market price", color = TT.good)
+                            StatusChip(glyph = "●", label = "TRACKING · market price", color = TT.good)
                         }
                     }
 
@@ -234,16 +244,27 @@ fun PersonDetailScreen(
 
                     Spacer(Modifier.height(12.dp))
 
+                    val historyFlat = isSparklineFlat(person.history)
                     Sparkline(
                         values = person.history,
-                        color = TT.series,
+                        // Muted instead of the usual bright cyan the moment
+                        // the tail stops moving — see [isSparklineFlat]'s own
+                        // doc for why that reads as "the market's closed,"
+                        // not a stuck/broken feed. The chip above still says
+                        // "TRACKING" — a real anchor exists, it's just not
+                        // moving right now.
+                        color = if (historyFlat) TT.inkMuted else TT.series,
                         modifier = Modifier
                             .fillMaxWidth()
                             .height(72.dp)
                     )
                     Spacer(Modifier.height(4.dp))
                     Text(
-                        text = "last ${person.history.size} closes",
+                        text = if (historyFlat) {
+                            "flat · market's closed right now"
+                        } else {
+                            "last ${person.history.size} closes"
+                        },
                         color = TT.inkMuted,
                         fontSize = 11.sp
                     )
@@ -543,7 +564,9 @@ private fun PersonHeader(
                             text = "Lives in $residence ↗",
                             color = TT.accentCyan,
                             fontSize = 11.sp,
-                            modifier = Modifier.clickable { uriHandler.openUri(townMapUrl(residence)) }
+                            modifier = Modifier
+                                .padding(2.dp)
+                                .clickable { uriHandler.openUri(townMapUrl(residence)) }
                         )
                     }
                     if (residence != null && wikipediaUrl != null) {
@@ -559,7 +582,9 @@ private fun PersonHeader(
                             color = TT.accentCyan,
                             fontSize = 11.sp,
                             fontWeight = FontWeight.Medium,
-                            modifier = Modifier.clickable { uriHandler.openUri(wikipediaUrl) }
+                            modifier = Modifier
+                                .padding(2.dp)
+                                .clickable { uriHandler.openUri(wikipediaUrl) }
                         )
                     }
                 }
@@ -573,10 +598,20 @@ private fun PersonHeader(
         Box(
             modifier = Modifier
                 .align(Alignment.TopStart)
+                // Shadow before this Box's own .clip() — clip would cut off
+                // anything drawn after it, elevation included, so this can't
+                // go through hudTouchable's own (otherwise equivalent)
+                // elevation param here.
+                .shadow(
+                    elevation = 1.5.dp,
+                    shape = TT.panelShape(14.dp),
+                    ambientColor = TT.accentCyan.copy(alpha = 0.55f),
+                    spotColor = TT.accentCyan.copy(alpha = 0.55f)
+                )
                 .clip(TT.panelShape(14.dp))
                 .background(Color.Black.copy(alpha = 0.55f))
                 .border(1.dp, TT.borderBright, TT.panelShape(14.dp))
-                .clickable(onClick = onBack)
+                .hudTouchable(cornerLength = 6.dp, cornerInset = 2.dp, onClick = onBack)
                 .padding(start = 14.dp, top = 9.dp, end = 11.dp, bottom = 8.dp)
         ) {
             Text(
@@ -594,10 +629,16 @@ private fun PersonHeader(
             Box(
                 modifier = Modifier
                     .align(Alignment.TopEnd)
+                    .shadow(
+                        elevation = 1.5.dp,
+                        shape = TT.panelShape(14.dp),
+                        ambientColor = TT.accentCyan.copy(alpha = 0.55f),
+                        spotColor = TT.accentCyan.copy(alpha = 0.55f)
+                    )
                     .clip(TT.panelShape(14.dp))
                     .background(Color.Black.copy(alpha = 0.55f))
                     .border(1.dp, TT.borderBright, TT.panelShape(14.dp))
-                    .clickable { uriHandler.openUri(socialUrl) }
+                    .hudTouchable(cornerLength = 6.dp, cornerInset = 2.dp) { uriHandler.openUri(socialUrl) }
                     .padding(start = 11.dp, top = 9.dp, end = 14.dp, bottom = 8.dp)
             ) {
                 Text(
@@ -648,15 +689,47 @@ private fun FlightCard(
     // snapshot_worker.py's flight_status() `was == "AIRBORNE"` branch — and
     // only currentBucket, not state, tells them apart.
     val signalLost = flight.state == FlightState.UNKNOWN && flight.currentBucket == "SIGNAL_LOST"
+    // Option D's "the grid is a status layer, not just texture": flag this
+    // card with a status-coloured glow only when there's actually something
+    // worth flagging — a confirmed dropped signal (critical/red). A plain
+    // UNKNOWN with no bucket set yet is the everyday "haven't heard from it
+    // in a bit" gap — see currentBucket's own doc comment — not a real
+    // aircraft-in-use event, so it gets no glow at all, same as the calm
+    // AIRBORNE/ON_GROUND states.
+    val glowColor = when {
+        signalLost -> TT.critical
+        else -> null
+    }
 
     Column(
         Modifier
             .fillMaxWidth()
-            .background(TT.surface, TT.panelShape(14.dp))
-            .border(1.dp, TT.border, TT.panelShape(14.dp))
+            // Whole card is the tap target when a map to focus exists, so
+            // hudTouchable goes first — see PersonRow's identical reasoning
+            // in TrackerScreen.kt — replacing the plain `clickable` this
+            // used to have.
             .then(
-                if (onFocusMap != null) Modifier.clickable(onClick = onFocusMap) else Modifier
+                if (onFocusMap != null) {
+                    Modifier.hudTouchable(
+                        cornerLength = 9.dp,
+                        cornerInset = 3.dp,
+                        elevation = 2.dp,
+                        shape = TT.panelShape(14.dp),
+                        onClick = onFocusMap
+                    )
+                } else {
+                    Modifier
+                }
             )
+            .background(TT.surface, TT.panelShape(14.dp))
+            .then(
+                if (glowColor != null) {
+                    Modifier.honeycombGlowCell(xFraction = 0.16f, yFraction = 0.14f, color = glowColor)
+                } else {
+                    Modifier
+                }
+            )
+            .border(1.dp, TT.border, TT.panelShape(14.dp))
             .padding(14.dp)
     ) {
         SectionLabel(text = "AIRCRAFT")
@@ -759,7 +832,9 @@ private fun FlightCard(
                 color = TT.accentCyan,
                 fontSize = 13.sp,
                 fontWeight = FontWeight.Medium,
-                modifier = Modifier.clickable { uriHandler.openUri(url) }
+                modifier = Modifier
+                    .padding(2.dp)
+                    .clickable { uriHandler.openUri(url) }
             )
         }
     }
@@ -832,15 +907,37 @@ private fun BoatCard(
 ) {
     val uriHandler = LocalUriHandler.current
     fun label(unlocode: String) = ports[unlocode]?.label ?: unlocode
+    // Vessels don't have a distinct "confirmed dropped signal" flag the way
+    // flights do (see FlightCard's signalLost) — UNKNOWN is the one muted
+    // state here, so it gets the single softer warning glow rather than a
+    // severity split.
+    val glowColor = if (vessel.state == VesselState.UNKNOWN) TT.warning else null
 
     Column(
         Modifier
             .fillMaxWidth()
-            .background(TT.surface, TT.panelShape(14.dp))
-            .border(1.dp, TT.border, TT.panelShape(14.dp))
             .then(
-                if (onFocusMap != null) Modifier.clickable(onClick = onFocusMap) else Modifier
+                if (onFocusMap != null) {
+                    Modifier.hudTouchable(
+                        cornerLength = 9.dp,
+                        cornerInset = 3.dp,
+                        elevation = 2.dp,
+                        shape = TT.panelShape(14.dp),
+                        onClick = onFocusMap
+                    )
+                } else {
+                    Modifier
+                }
             )
+            .background(TT.surface, TT.panelShape(14.dp))
+            .then(
+                if (glowColor != null) {
+                    Modifier.honeycombGlowCell(xFraction = 0.16f, yFraction = 0.14f, color = glowColor)
+                } else {
+                    Modifier
+                }
+            )
+            .border(1.dp, TT.border, TT.panelShape(14.dp))
             .padding(14.dp)
     ) {
         SectionLabel(text = "VESSEL")
@@ -934,7 +1031,9 @@ private fun BoatCard(
                 color = TT.accentCyan,
                 fontSize = 13.sp,
                 fontWeight = FontWeight.Medium,
-                modifier = Modifier.clickable { uriHandler.openUri(url) }
+                modifier = Modifier
+                    .padding(2.dp)
+                    .clickable { uriHandler.openUri(url) }
             )
         }
     }
@@ -1455,10 +1554,18 @@ private fun FamilyHistoryEntryCard(onClick: () -> Unit) {
     Row(
         Modifier
             .fillMaxWidth()
+            // Whole card is the tap target, so hudTouchable goes first — see
+            // PersonRow's identical reasoning in TrackerScreen.kt.
+            .hudTouchable(
+                cornerLength = 9.dp,
+                cornerInset = 3.dp,
+                elevation = 2.dp,
+                shape = TT.panelShape(14.dp),
+                onClick = onClick
+            )
             .background(TT.surface, TT.panelShape(14.dp))
             .border(1.dp, TT.border, TT.panelShape(14.dp))
             .hudCorners()
-            .clickable(onClick = onClick)
             .padding(14.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
@@ -1547,7 +1654,12 @@ private fun NewsRow(item: NewsItem, nowSeconds: Long) {
     Column(
         Modifier
             .fillMaxWidth()
-            .clickable { uriHandler.openUri(item.url) }
+            .hudTouchable(
+                cornerLength = 8.dp,
+                cornerInset = 3.dp,
+                elevation = 2.dp,
+                shape = TT.panelShape(12.dp)
+            ) { uriHandler.openUri(item.url) }
             .background(TT.surface, TT.panelShape(12.dp))
             .border(1.dp, TT.border, TT.panelShape(12.dp))
             .padding(14.dp)

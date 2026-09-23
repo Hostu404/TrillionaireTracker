@@ -21,6 +21,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.text.font.FontWeight
@@ -34,6 +35,7 @@ import com.hostu404.trilliontracker.data.WorldSnapshot
 import com.hostu404.trilliontracker.ui.components.NoteChip
 import com.hostu404.trilliontracker.ui.components.StatusChip
 import com.hostu404.trilliontracker.ui.components.hudCorners
+import com.hostu404.trilliontracker.ui.components.hudTouchable
 import com.hostu404.trilliontracker.ui.theme.TT
 
 /**
@@ -119,10 +121,21 @@ private fun BackRow(onBack: () -> Unit) {
     Row(verticalAlignment = Alignment.CenterVertically) {
         Box(
             modifier = Modifier
+                // shadow has to sit before this Box's own .clip() below —
+                // clip cuts off anything drawn after it in the chain,
+                // elevation shadow included, so it goes here rather than
+                // through hudTouchable's own (equivalent, but too late for
+                // this particular chain) elevation param.
+                .shadow(
+                    elevation = 1.5.dp,
+                    shape = TT.panelShape(10.dp),
+                    ambientColor = TT.accentCyan.copy(alpha = 0.55f),
+                    spotColor = TT.accentCyan.copy(alpha = 0.55f)
+                )
                 .clip(TT.panelShape(10.dp))
                 .background(TT.surfaceRaised)
                 .border(1.dp, TT.borderBright, TT.panelShape(10.dp))
-                .clickable(onClick = onBack)
+                .hudTouchable(cornerLength = 6.dp, cornerInset = 2.dp, onClick = onBack)
                 .padding(horizontal = 14.dp, vertical = 8.dp)
         ) {
             Text(text = "← Back", color = TT.accentCyan, fontSize = 13.sp, fontWeight = FontWeight.Medium)
@@ -268,7 +281,9 @@ private fun MemberBlock(member: FamilyMember) {
             text = member.sourceLabel + " ↗",
             color = TT.accentCyan,
             fontSize = 10.sp,
-            modifier = Modifier.clickable { uriHandler.openUri(member.sourceUrl) }
+            modifier = Modifier
+                .padding(2.dp)
+                .clickable { uriHandler.openUri(member.sourceUrl) }
         )
     }
 }
@@ -305,7 +320,9 @@ private fun SourcedNoteBlock(label: String, note: SourcedNote) {
             text = note.sourceLabel + " ↗",
             color = TT.accentCyan,
             fontSize = 10.sp,
-            modifier = Modifier.clickable { uriHandler.openUri(note.sourceUrl) }
+            modifier = Modifier
+                .padding(2.dp)
+                .clickable { uriHandler.openUri(note.sourceUrl) }
         )
     }
 }

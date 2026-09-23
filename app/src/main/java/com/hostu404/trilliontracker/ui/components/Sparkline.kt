@@ -64,3 +64,25 @@ fun Sparkline(
         drawCircle(color = color, radius = 4.dp.toPx() / 2f, center = end)
     }
 }
+
+/**
+ * True when the most recent readings haven't moved at all — the sparkline
+ * equivalent of "the market's closed right now," not "this stock never
+ * moves." Only looks at the trailing [tailSize] points (or the whole list,
+ * if shorter) rather than [Sparkline]'s own full window, so a stretch of
+ * real intraday movement earlier in the history doesn't hide a market
+ * that's since closed for the night, and a market that only just closed
+ * reads as flat immediately rather than after the whole window catches up.
+ *
+ * Exact equality on purpose, not a fuzzy tolerance: each backend poll
+ * re-reads the same upstream `regularMarketPrice` field fresh (see
+ * [LiveQuoteClient]) rather than accumulating a running value, so two
+ * consecutive closed-market polls really do land on the bit-identical
+ * double, not just a close one — no epsilon to tune or get wrong.
+ */
+fun isSparklineFlat(values: List<Double>, tailSize: Int = 6): Boolean {
+    if (values.size < 2) return false
+    val tail = values.takeLast(tailSize.coerceAtLeast(2))
+    val first = tail.first()
+    return tail.all { it == first }
+}

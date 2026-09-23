@@ -210,9 +210,21 @@ object SeedData {
      * AIS trackers (MarineTraffic, VesselFinder, MyShipTracking); the
      * underway/in-port STATE, ports and timestamps below are still a
      * fabricated demo scenario, not real positions — same split as the
-     * flight rows above. Musk, Dell, Huang and Ballmer have no entry: no
-     * yacht confidently linked to any of them turned up in research, and
-     * guessing one is exactly what this feature refuses to do.
+     * flight rows above. Musk, Dell, Huang, Ballmer, and Page have no entry:
+     * no yacht confidently linked to the first four turned up in research,
+     * and guessing one is exactly what this feature refuses to do. Page
+     * *did* carry an entry here until this correction — his old "SENSES"
+     * MMSI (319833000) — but Boat International's tech-billionaire yacht
+     * roundup states outright that Senses was sold by Page to an unknown
+     * buyer in 2020, and superyachtfan.com's own SENSES page separately
+     * names its current owner as Andrea Recordati, an unrelated Italian
+     * pharma billionaire, corroborating the sale. Tracking that MMSI under
+     * Page's name would have quietly attributed Recordati's real boat
+     * movements to him — worse than showing no vessel at all — so it was
+     * removed here to match the same correction already made in
+     * `backend/holdings.json` (see that file's own `_comment`, "page.mmsi/
+     * vesselName removed 2026-09-22"). Add him back only once a current,
+     * confidently-sourced yacht turns up.
      */
     private fun vesselFor(id: String, nowEpoch: Long): VesselStatus? = when (id) {
         "bezos" -> VesselStatus(
@@ -241,21 +253,6 @@ object SeedData {
             selfReportedDestination = "MONACO",
             lastSeenEpoch = nowEpoch - 300,
             liveMapUrl = "https://www.marinetraffic.com/en/ais/details/ships/mmsi:319032600"
-        )
-
-        "page" -> VesselStatus(
-            name = "SENSES",
-            mmsi = "319833000",
-            state = VesselState.IN_PORT,
-            verified = true,
-            arrivedPortUnlocode = "NZAKL",
-            arrivedAtEpoch = nowEpoch - 500_000,
-            currentPortUnlocode = "NZAKL",
-            recentStops = listOf(
-                PortStop(unlocode = "NZAKL", arrivedAtEpoch = nowEpoch - 500_000, departedAtEpoch = null)
-            ),
-            lastSeenEpoch = nowEpoch - 1_800,
-            liveMapUrl = "https://www.marinetraffic.com/en/ais/details/ships/mmsi:319833000"
         )
 
         "brin" -> VesselStatus(
