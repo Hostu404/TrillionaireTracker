@@ -271,7 +271,22 @@ object SeedData {
         // UNKNOWN-with-no-fabricated-activity treatment as the plane-only
         // entries in flightFor() above.
         "zuckerberg" -> VesselStatus(name = "LAUNCHPAD", mmsi = "538072122", state = VesselState.UNKNOWN, verified = true)
-        "ortega" -> VesselStatus(name = "DRIZZLE", mmsi = "256867000", state = VesselState.UNKNOWN, verified = true)
+        // Demoing the 2026-09-23 general-location fallback (see
+        // VesselStatus.currentLat's doc comment): a real position with no
+        // known port nearby now shows an approximate area instead of
+        // nothing, so this entry exercises that path in the seed data
+        // rather than leaving it untested until a live AIS catch does.
+        "ortega" -> VesselStatus(
+            name = "DRIZZLE",
+            mmsi = "256867000",
+            state = VesselState.UNDERWAY,
+            verified = true,
+            currentLat = 39.5,
+            currentLon = 2.9,
+            generalLocation = "Mediterranean Sea",
+            lastSeenEpoch = nowEpoch - 600,
+            liveMapUrl = "https://www.marinetraffic.com/en/ais/details/ships/mmsi:256867000"
+        )
 
         else -> null
     }

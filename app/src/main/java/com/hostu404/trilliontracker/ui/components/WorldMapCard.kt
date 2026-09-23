@@ -29,6 +29,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.drawscope.Fill
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.LocalDensity
@@ -72,7 +73,18 @@ data class MapPin(
     /** "✈" or "⚓" — which of the two this pin is. */
     val glyph: String,
     val isLive: Boolean,
-    val caption: String
+    val caption: String,
+    /**
+     * True for the [FlightStatus.currentLat]/[com.hostu404.trilliontracker.data.VesselStatus.currentLat]
+     * fallback added 2026-09-23: a real fix that didn't resolve to any known
+     * port/airport, so [label] is a coarse `generalLocation` string ("off
+     * the coast of Spain"), not a confirmed place name. Drawn as a dashed
+     * ring rather than [isLive]'s solid dot or hollow "last known" ring, so
+     * the reduced confidence is visible on the map itself, not just in text.
+     * Never true at the same time as a normal port/airport-matched pin for
+     * the same subject — the two are mutually exclusive upstream.
+     */
+    val isApproximate: Boolean = false
 )
 
 /**
@@ -401,14 +413,30 @@ fun WorldMapCard(
 
                 for (pin in pins) {
                     val p = toCanvas(pin.lon, pin.lat)
-                    val pinColor = if (pin.isLive) TT.good else TT.warning
-                    if (pin.isLive) {
-                        drawCircle(color = pinColor, radius = 5.dp.toPx(), center = p)
-                        drawCircle(color = Color.White, radius = 5.dp.toPx(), center = p, style = Stroke(width = 1.dp.toPx()))
+                    if (pin.isApproximate) {
+                        // Dashed ring, muted color — a real fix that didn't
+                        // resolve to a known place, so this pin is honestly
+                        // less certain than either of the two styles below.
+                        // See MapPin.isApproximate's doc comment.
+                        drawCircle(
+                            color = TT.inkMuted,
+                            radius = 6.dp.toPx(),
+                            center = p,
+                            style = Stroke(
+                                width = 1.5.dp.toPx(),
+                                pathEffect = PathEffect.dashPathEffect(floatArrayOf(4.dp.toPx(), 4.dp.toPx()))
+                            )
+                        )
                     } else {
-                        // Hollow ring instead of a filled dot — visually distinct
-                        // "last known, not live" marker.
-                        drawCircle(color = pinColor, radius = 5.dp.toPx(), center = p, style = Stroke(width = 1.5.dp.toPx()))
+                        val pinColor = if (pin.isLive) TT.good else TT.warning
+                        if (pin.isLive) {
+                            drawCircle(color = pinColor, radius = 5.dp.toPx(), center = p)
+                            drawCircle(color = Color.White, radius = 5.dp.toPx(), center = p, style = Stroke(width = 1.dp.toPx()))
+                        } else {
+                            // Hollow ring instead of a filled dot — visually distinct
+                            // "last known, not live" marker.
+                            drawCircle(color = pinColor, radius = 5.dp.toPx(), center = p, style = Stroke(width = 1.5.dp.toPx()))
+                        }
                     }
                     drawTextSafely(
                         textMeasurer = textMeasurer,
@@ -447,7 +475,7 @@ fun WorldMapCard(
         Column {
             pins.forEach { pin ->
                 Text(
-                    text = "${if (pin.isLive) "●" else "○"} ${pin.glyph} ${pin.label} — ${pin.caption}",
+                    text = "${if (pin.isApproximate) "◌" else if (pin.isLive) "●" else "○"} ${pin.glyph} ${pin.label} — ${pin.caption}",
                     color = TT.inkMuted,
                     fontSize = 11.sp
                 )
