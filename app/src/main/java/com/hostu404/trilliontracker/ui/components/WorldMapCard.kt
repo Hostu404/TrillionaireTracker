@@ -318,11 +318,26 @@ fun WorldMapCard(
             }
 
             LaunchedEffect(pins, widthPx) {
+                // `centered` used to be set the instant this ran once with a
+                // non-zero width, even if `pins` was still empty that pass
+                // (a brand-new, currently-airborne person can genuinely have
+                // zero pins until either recentStops gets its first entry or
+                // rememberLiveFlightPosition's first async fetch resolves -
+                // see flightMapPin's `?: return null`). That permanently
+                // latched `centered = true` on an empty pin list, so once a
+                // real pin did arrive a moment later, this effect re-ran
+                // (pins is a key) but the guard above short-circuited it and
+                // the map was left sitting at the default offset forever,
+                // recoverable only by tapping a card to fire a
+                // [MapFocusRequest]. Only latch once there's an actual pin to
+                // center on.
                 if (!centered && widthPx > 0f) {
-                    centered = true
                     val initial = pins.firstOrNull()
-                    focusedPin = initial
-                    focusOn(initial, DEFAULT_SCALE)
+                    if (initial != null) {
+                        centered = true
+                        focusedPin = initial
+                        focusOn(initial, DEFAULT_SCALE)
+                    }
                 }
             }
 
