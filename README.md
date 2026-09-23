@@ -45,7 +45,6 @@ See **[DESIGN.md](DESIGN.md)** for the step-by-step go-live checklist, the detai
 ## Known gaps
 
 - Two of ten people's share counts (Dell, Ortega) are derived rather than filing-sourced, and aren't auto-monitored for drift the way the other eight are.
-- The AIS listener has never been run against the live aisstream.io service — watch its logs on first real run.
 - Everything tracked is already public information (SEC filings, ADS-B/AIS, Wikipedia, public social links) — never inferred or scraped from a private source. That limits how wrong the app can be, and also how much it will ever show.
 
 Full detail on all of the above: **[DESIGN.md](DESIGN.md)**.
