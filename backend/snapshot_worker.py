@@ -93,6 +93,10 @@ VESSEL_EVERY = 1     # passes between ais_cache.json reads — it's a local file
                      # not a network call, so there's no rate-limit reason to
                      # space these out the way FLIGHT_EVERY exists for.
 VESSEL_STALE_SECONDS = 6 * 3_600   # cache entry older than this reads as no signal
+DEAD_RECKON_MAX_SECONDS = 30 * 60  # how far past the last real fix we'll still
+                                    # project forward a display-only estimate —
+                                    # see the dead-reckoning block in
+                                    # vessel_status() for the full rationale.
 NEWS_EVERY = 15      # passes between RSS reads
 WIKI_REFRESH_SECONDS = 30 * 86_400   # a photo/article link barely ever changes
 
@@ -351,6 +355,21 @@ class Subject:
     tail: str | None = None
     tail_verified: bool = False
     mmsi: str | None = None
+    imo: str | None = None          # second identifier, see fetch_aircraft()'s
+                                     # tail fallback for the plane-side mirror
+                                     # of this — MMSI can and does change when
+                                     # a vessel re-flags/re-registers, but its
+                                     # IMO number is permanent for the ship's
+                                     # hull, so it's the fallback lookup key
+                                     # once ais_listener.py starts recording it
+                                     # (see ShipStaticData handling there).
+                                     # Not yet used for an active fallback
+                                     # lookup path — aisstream.io has no
+                                     # IMO-keyed query, unlike adsb.lol/adsb.fi's
+                                     # registration lookup — so today this is
+                                     # captured and surfaced for cross-referencing
+                                     # (e.g. against MarineTraffic/VesselFinder
+                                     # by hand) rather than driving code here.
     vessel_name: str | None = None
     vessel_verified: bool = False
     news_query: str | None = None
@@ -457,6 +476,34 @@ def _angular_diff(a: float, b: float) -> float:
     return abs((a - b + 180.0) % 360.0 - 180.0)
 
 
+def _dead_reckon_nm(lat: float, lon: float, bearing_deg: float, distance_nm: float) -> tuple[float, float]:
+    """
+    Standard great-circle "destination point given start, bearing and
+    distance" formula (the same one behind most GPS/marine-nav dead-
+    reckoning tools) — the inverse of what `_haversine_nm`/`_bearing_deg`
+    above compute. Used by vessel_status()'s short-horizon dead reckoning
+    (see DEAD_RECKON_MAX_SECONDS) to project a vessel's position forward
+    from its last real AIS fix using that fix's own reported course/speed.
+    Never used for flights: a stationary or airborne aircraft's own live
+    position path already covers that case differently (see FlightStatus's
+    currentLat doc comment), and this project-forward approach only makes
+    sense for a genuinely moving subject with a known heading.
+    """
+    r_nm = 3440.065
+    lat1 = math.radians(lat)
+    lon1 = math.radians(lon)
+    brng = math.radians(bearing_deg)
+    d_r = distance_nm / r_nm
+    lat2 = math.asin(
+        math.sin(lat1) * math.cos(d_r) + math.cos(lat1) * math.sin(d_r) * math.cos(brng)
+    )
+    lon2 = lon1 + math.atan2(
+        math.sin(brng) * math.sin(d_r) * math.cos(lat1),
+        math.cos(d_r) - math.sin(lat1) * math.sin(lat2),
+    )
+    return math.degrees(lat2), (math.degrees(lon2) + 540.0) % 360.0 - 180.0
+
+
 # Tunable, deliberately conservative — a wrong guess is worse than none.
 HEADING_CONE_DEG = 12.0
 HEADING_MIN_NM = 40.0
@@ -496,13 +543,26 @@ def estimate_heading_destination(
 
 def _fetch_readsb_style(url: str, icao_hex: str, source_label: str) -> dict | None:
     """
-    Shared parser for adsb.lol's `{"ac": [...]}` ("readsb"/tar1090) response
-    shape — the same source format the client's `parseReadsbAircraft`
-    (LiveTracking.kt) already reads. Returns the matching aircraft's raw
-    record (alt_baro/lat/lon/track — the same keys [flight_status] already
-    expects from [fetch_aircraft]), or None if this source has nothing for
-    this hex right now. One request per call, never a tight loop — be a good
-    citizen to these free community feeds.
+    Shared parser for adsb.lol's and adsb.fi's `{"ac": [...]}`
+    ("readsb"/tar1090) response shape — the same source format the client's
+    `parseReadsbAircraft` (LiveTracking.kt) already reads. Returns the
+    matching aircraft's raw record (alt_baro/lat/lon/track — the same keys
+    [flight_status] already expects from [fetch_aircraft]), or None if this
+    source has nothing for this hex right now. One request per call, never a
+    tight loop — be a good citizen to these free community feeds.
+
+    This deliberately does NOT check the record's `type` field (readsb's
+    source-quality enum: adsb_icao, mlat, tisb_icao, other, ...) before
+    accepting it — an MLAT-derived position (ground stations triangulating
+    an aircraft rather than reading its own broadcast position) is still a
+    real, current position for a real aircraft, and this app has no need
+    to distinguish "how" a fix was obtained from "whether" one exists. Ruled
+    out one plausible-sounding theory here: readsb's `~`-prefixed `hex`
+    values mark a non-ICAO address space, not MLAT specifically (confirmed
+    against readsb's own source), so there was never a hex-matching quirk
+    silently dropping MLAT fixes either — nothing to fix there, just
+    confirming (and now documenting) that every source type readsb reports
+    was already being accepted here.
     """
     try:
         data = get_json(url)
@@ -513,6 +573,33 @@ def _fetch_readsb_style(url: str, icao_hex: str, source_label: str) -> dict | No
         if str(entry.get("hex", "")).lower() == icao_hex.lower():
             return entry
     return None
+
+
+def _fetch_by_registration(tail: str, source_label: str, base_url: str) -> dict | None:
+    """
+    Registration/tail-number fallback, tried only when every hex-keyed
+    source above came up empty for this pass and this subject has a known
+    tail. The one real gap this closes: some private jets broadcast under a
+    temporary, anonymized ICAO address (the FAA's "PIA" — Privacy ICAO
+    Address — program exists specifically so an aircraft's normal hex
+    doesn't show up in public trackers, which is exactly the situation a
+    second identifier is for) — hex-based lookup can never find that
+    aircraft under its usual address, but the aggregator's own
+    registration index still resolves the same physical airframe.
+
+    Unlike `_fetch_readsb_style`, no client-side re-matching against a
+    returned field is needed: the endpoint itself is scoped to this one
+    registration (`/v2/reg/{tail}`, same `{"ac": [...]}` shape as the hex
+    endpoints on both adsb.lol and adsb.fi), so whatever comes back in
+    `ac[0]` — if anything — is already the right aircraft.
+    """
+    try:
+        data = get_json(f"{base_url}/v2/reg/{urllib.parse.quote(tail)}")
+    except Exception as exc:                      # noqa: BLE001
+        print(f"[{source_label}] reg={tail}: {exc}", file=sys.stderr)
+        return None
+    ac_list = data.get("ac") or []
+    return ac_list[0] if ac_list else None
 
 
 def _fetch_opensky(icao_hex: str) -> dict | None:
@@ -539,21 +626,28 @@ def _fetch_opensky(icao_hex: str) -> dict | None:
     return {"lat": lat, "lon": lon, "alt_baro": "ground" if on_ground else None, "track": track}
 
 
-def fetch_aircraft(icao_hex: str) -> dict | None:
+def fetch_aircraft(icao_hex: str, tail: str | None = None) -> dict | None:
     """
-    Two free, keyless sources, tried in order, stopping at the first one
-    that actually has this aircraft right now — the same redundancy the
-    client already applies to the live in-app position dot (see
+    Free, keyless sources, tried in order, stopping at the first one that
+    actually has this aircraft right now — the same redundancy the client
+    already applies to the live in-app position dot (see
     `LiveFlightTracker` in LiveTracking.kt), extended here to the source that
     matters more: this function's return value gets permanently folded into
     every person's persisted 7-day locationBreakdown/recentStops history
     below, so a single source's transient gap or rate limit used to become a
     permanent "NO_SIGNAL" slice nothing could ever fix retroactively once it
-    was written. adsb.lol stays first since it's the proven, already-working
-    source for the rest of the roster — a healthy poll still costs exactly
-    the one request it always has; OpenSky only fires when it comes up empty.
+    was written.
 
-    A third source, airplanes.live, used to sit here too. Their public
+    adsb.lol stays first since it's the proven, already-working source for
+    the rest of the roster. adsb.fi (added 2026-09-23) is a second,
+    independently-run community aggregator of the same "readsb" shape —
+    genuinely different receivers than adsb.lol's, so it's tried right
+    after rather than lumped in with OpenSky, which is a structurally
+    different, generally sparser source and stays last. A healthy poll
+    still costs exactly one request; each later source only ever fires when
+    everything before it came up empty.
+
+    A fourth source, airplanes.live, used to sit here too. Their public
     `/v2/hex/` endpoint has since locked down (returns a flat 403 telling
     integrators to contact them for approved access — confirmed against
     other open-source trackers hitting the exact same wall in 2026, not just
@@ -561,13 +655,37 @@ def fetch_aircraft(icao_hex: str) -> dict | None:
     chain cost a wasted request and a stderr line on every single miss for
     no actual redundancy, so it's removed rather than left as dead weight.
     If they ever reopen public access, `_fetch_readsb_style` still works
-    unchanged for their response shape — just add a third call back in here.
+    unchanged for their response shape — just add a call back in here.
+
+    If every hex-keyed source above comes up empty and `tail` is known, one
+    last try: a registration-based lookup on adsb.lol and adsb.fi (see
+    `_fetch_by_registration`'s doc comment for why this can succeed when
+    every hex-based attempt just failed — a temporary/anonymized ICAO
+    address). OpenSky's public API has no equivalent registration lookup,
+    so it's not part of this fallback.
     """
     ac = _fetch_readsb_style(f"https://api.adsb.lol/v2/hex/{icao_hex.lower()}", icao_hex, "adsb")
     if ac is not None:
         return ac
 
-    return _fetch_opensky(icao_hex)
+    ac = _fetch_readsb_style(f"https://opendata.adsb.fi/api/v2/hex/{icao_hex.lower()}", icao_hex, "adsbfi")
+    if ac is not None:
+        return ac
+
+    ac = _fetch_opensky(icao_hex)
+    if ac is not None:
+        return ac
+
+    if tail:
+        ac = _fetch_by_registration(tail, "adsb-reg", "https://api.adsb.lol")
+        if ac is not None:
+            return ac
+
+        ac = _fetch_by_registration(tail, "adsbfi-reg", "https://opendata.adsb.fi/api")
+        if ac is not None:
+            return ac
+
+    return None
 
 
 def flight_status(subject: Subject, prev: dict, airports, countries, now: int) -> dict | None:
@@ -594,7 +712,7 @@ def flight_status(subject: Subject, prev: dict, airports, countries, now: int) -
     if not subject.icao_hex:
         return None
 
-    ac = fetch_aircraft(subject.icao_hex)
+    ac = fetch_aircraft(subject.icao_hex, tail=subject.tail)
     memory = prev.get(subject.icao_hex, {})
 
     alt = ac.get("alt_baro") if ac else None
@@ -1123,6 +1241,7 @@ def vessel_status(subject: Subject, prev: dict, ports, ais_cache: dict, countrie
     lat = entry.get("lat") if fresh else None
     lon = entry.get("lon") if fresh else None
     sog = entry.get("sog") if fresh else None  # knots
+    cog = entry.get("cog") if fresh else None  # degrees true, course over ground
     destination = (entry.get("destination") or "").strip() if fresh else None
 
     # A moored/anchored vessel still shows a little drift in AIS SOG — 0.5kt
@@ -1133,6 +1252,34 @@ def vessel_status(subject: Subject, prev: dict, ports, ais_cache: dict, countrie
         state = "IN_PORT"
     else:
         state = "UNDERWAY"
+
+    # Short-horizon dead reckoning: AIS coverage between receivers can leave
+    # a genuine gap of several minutes even for a vessel that's happily
+    # underway the whole time. Rather than let the display fall back to
+    # "last known position" (increasingly wrong the longer the gap runs) or
+    # to nothing at all, project the last fix forward along its reported
+    # course for a short, bounded window. This is deliberately conservative:
+    # DEAD_RECKON_MAX_SECONDS caps how stale a fix can be before we stop
+    # trusting the projection, and it only ever applies when the vessel was
+    # actually moving (sog >= 0.5) with a valid course. Two things this must
+    # NEVER touch: `here` (the port match used for the state machine) and
+    # anything written into state.json — both keep using the raw, real fix
+    # below, so an estimate can never masquerade as a confirmed arrival/
+    # departure or leak into the persisted stop history. dr_lat/dr_lon are
+    # display-only, current-pass-only, exactly like currentLat/currentLon
+    # already are.
+    dr_lat, dr_lon = lat, lon
+    if (
+        fresh
+        and lat is not None
+        and lon is not None
+        and isinstance(sog, (int, float)) and sog >= 0.5
+        and isinstance(cog, (int, float))
+    ):
+        age = now - int(entry.get("timestamp", 0))
+        if 0 < age <= DEAD_RECKON_MAX_SECONDS:
+            distance_nm = sog * (age / 3600.0)
+            dr_lat, dr_lon = _dead_reckon_nm(lat, lon, cog, distance_nm)
 
     here = nearest_port(ports, lat, lon) if (ports and lat is not None and lon is not None) else None
 
@@ -1291,12 +1438,17 @@ def vessel_status(subject: Subject, prev: dict, ports, ais_cache: dict, countrie
         "trackedSeconds": tracked_seconds,
         # The one exception to "never a coordinate" — see the docstring
         # above. Only when a real fresh fix (moored or underway) matched no
-        # known port; None otherwise.
-        "currentLat": lat if (state in ("IN_PORT", "UNDERWAY") and here is None and lat is not None) else None,
-        "currentLon": lon if (state in ("IN_PORT", "UNDERWAY") and here is None and lon is not None) else None,
+        # known port; None otherwise. Uses dr_lat/dr_lon (the short-horizon
+        # dead-reckoning projection — see the block above) rather than the
+        # raw fix, so a boat mid-gap between AIS receivers still shows a
+        # sensible current position instead of one that's silently aging in
+        # place; `here` above still used the raw fix, so this never affects
+        # the port-match/state-machine logic, only what's displayed.
+        "currentLat": dr_lat if (state in ("IN_PORT", "UNDERWAY") and here is None and dr_lat is not None) else None,
+        "currentLon": dr_lon if (state in ("IN_PORT", "UNDERWAY") and here is None and dr_lon is not None) else None,
         "generalLocation": (
-            general_location(countries, lat, lon)
-            if (state in ("IN_PORT", "UNDERWAY") and here is None and lat is not None and lon is not None)
+            general_location(countries, dr_lat, dr_lon)
+            if (state in ("IN_PORT", "UNDERWAY") and here is None and dr_lat is not None and dr_lon is not None)
             else None
         ),
     }
@@ -1411,6 +1563,7 @@ def load_subjects() -> list[Subject]:
                 tail=entry.get("tail"),
                 tail_verified=bool(entry.get("tailVerified", False)),
                 mmsi=entry.get("mmsi"),
+                imo=entry.get("imo"),
                 vessel_name=entry.get("vesselName"),
                 vessel_verified=bool(entry.get("vesselVerified", False)),
                 news_query=entry.get("newsQuery") or entry["name"],

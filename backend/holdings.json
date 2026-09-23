@@ -201,7 +201,25 @@
     "note's own instruction. Same cross-corroboration bar as the other",
     "MMSIs in this file (MarineTraffic/VesselFinder/MyShipTracking); no new",
     "sourcing pass was done here beyond confirming the Kotlin file's value.",
-    "vesselVerified set true to match every other MMSI entry in this file."
+    "vesselVerified set true to match every other MMSI entry in this file.",
+    "",
+    "--- imo field added 2026-09-23 (schema only, no values filled in yet):",
+    "an optional second identifier per vessel, mirroring icaoHex/tail's",
+    "relationship on the plane side. The reason to want it: MMSI is a radio",
+    "call-sign-like number that changes when a vessel re-flags to a",
+    "different country or changes owner/name, while a ship's IMO number is",
+    "permanently assigned to the hull at build and never changes — the more",
+    "durable of the two identifiers. snapshot_worker.py's Subject.imo reads",
+    "an `imo` key here when present; ais_listener.py now also captures",
+    "ImoNumber off live ShipStaticData broadcasts into ais_cache.json",
+    "independent of whether it's filled in here. Left unset for every",
+    "vessel in this file for now rather than guessed — same rule this file",
+    "applies everywhere else (see icaoHex/tail note above) — because",
+    "confirming an IMO number to a specific hull is its own sourcing pass",
+    "(cross-referencing MarineTraffic/VesselFinder/equasis.org by name),",
+    "and wasn't done in this pass. Add `\"imo\": \"...\"` per vessel once",
+    "that pass happens; nothing else needs to change for it to start being",
+    "used."
   ],
 
   "people": [
