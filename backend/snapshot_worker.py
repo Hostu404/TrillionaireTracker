@@ -84,6 +84,7 @@ OUTPUT_PATH = os.path.join(HERE, "snapshot.json")
 AIRPORTS_PATH = os.path.join(HERE, "airports.csv")  # optional, OurAirports format
 PORTS_PATH = os.path.join(HERE, "ports.csv")         # optional, see load_ports()
 AIS_CACHE_PATH = os.path.join(HERE, "ais_cache.json")  # written by ais_listener.py
+COUNTRIES_PATH = os.path.join(HERE, "world_countries.json")  # optional, see general_location()
 
 THRESHOLD_USD = 1_000_000_000_000.0
 POLL_SECONDS = 60
@@ -569,7 +570,7 @@ def fetch_aircraft(icao_hex: str) -> dict | None:
     return _fetch_opensky(icao_hex)
 
 
-def flight_status(subject: Subject, prev: dict, airports, now: int) -> dict | None:
+def flight_status(subject: Subject, prev: dict, airports, countries, now: int) -> dict | None:
     """
     - state and departure are live, straight off ADS-B
     - arrival is filled in once the aircraft is on the ground — that's the
@@ -578,8 +579,17 @@ def flight_status(subject: Subject, prev: dict, airports, now: int) -> dict | No
       not a filed flight plan (see estimate_heading_destination)
     - currentAirportIcao and recentStops track parked location at airport
       granularity over a trailing 7 days — never a coordinate or a live trail
-    - the live position is never included in the payload at all; the client
-      links out to a map instead
+    - the live position is never persisted into that history at all
+    - the one narrow, discussed exception (added 2026-09-23): when the
+      aircraft is ON_GROUND with a real fresh fix that matches no known
+      airport, currentLat/currentLon/generalLocation carry that one fix
+      through instead of it just vanishing into "no signal" — current-pass
+      only, never written into recentStops/state.json. Deliberately NOT
+      done for AIRBORNE: that live position already reaches the client
+      through the separate, non-persisted LiveFlightTracker path, and
+      adding a second copy here would mean committing an in-flight
+      coordinate to git history every few minutes. See general_location()
+      and Models.kt's currentLat doc comment for the full reasoning.
     """
     if not subject.icao_hex:
         return None
@@ -794,6 +804,17 @@ def flight_status(subject: Subject, prev: dict, airports, now: int) -> dict | No
             {"bucket": b["bucket"], "seconds": b["seconds"]} for b in location_breakdown
         ],
         "trackedSeconds": tracked_seconds,
+        # The one exception to "never a coordinate" — see the docstring
+        # above. Only when a real fresh ON_GROUND fix matched no known
+        # airport; None the rest of the time, including always-None while
+        # AIRBORNE.
+        "currentLat": lat if (state == "ON_GROUND" and here is None and lat is not None) else None,
+        "currentLon": lon if (state == "ON_GROUND" and here is None and lon is not None) else None,
+        "generalLocation": (
+            general_location(countries, lat, lon)
+            if (state == "ON_GROUND" and here is None and lat is not None and lon is not None)
+            else None
+        ),
         # The bucket this exact pass just assigned above — distinct from
         # `state`, which only ever says AIRBORNE/ON_GROUND/UNKNOWN and can't
         # by itself tell the client whether a current UNKNOWN reading is an
@@ -825,12 +846,14 @@ def load_ports() -> list[dict]:
 
         unlocode,name,municipality,iso_country,lat,lon
 
-    There's no single free file in exactly this shape the way OurAirports'
-    airports.csv covers every airport — but you don't need every port on
-    Earth, only the handful your tracked yachts actually visit (marinas and
-    harbours a superyacht cycles through number in the dozens, not
-    thousands). Hand-curating this list from UN/LOCODE + the World Port
-    Index (both free, NGA/UNECE-published) is realistic; see the README.
+    The bundled ports.csv (added 2026-09-23) covers all 16,666 UN/LOCODE
+    seaports worldwide with usable coordinates — filtered from
+    cristan/improved-un-locodes' code-list-improved.csv down to entries
+    whose Function code marks a sea/maritime port and whose UN/LOCODE
+    status isn't rejected or slated for removal. Same shape and full-
+    global-coverage lineage as airports.csv next to it; see DESIGN.md for
+    why a hand-curated per-yacht list turned out not to be enough (a real
+    AIS catch with no matching port silently read as "no signal").
     """
     if not os.path.exists(PORTS_PATH):
         return []
@@ -876,6 +899,171 @@ def nearest_port(ports, lat: float, lon: float) -> str | None:
     return best if best_d < 0.5 else None
 
 
+# ------------------------------------------------------- general location
+#
+# The one narrow exception to "port/airport granularity only, never a
+# coordinate" (see Models.kt / DESIGN.md for the full privacy rationale and
+# scoping). When a real, fresh position doesn't resolve to any known
+# port/airport, this gives it a coarse, human place name — a country, a
+# named sea, or a broad ocean band — cheap enough to compute (a point-in-
+# polygon test against ~177 countries, worst case a few thousand vertex
+# comparisons) that it costs nothing meaningful in a once-a-minute worker.
+#
+# It shares its one data file, world_countries.json, with the Android
+# client's own Canvas world map (app/src/main/assets/world_countries.json —
+# this is a byte-for-byte copy), so the backend's coarse place names and the
+# client's drawn coastlines can never drift into disagreeing with each
+# other about where a border actually is.
+def load_countries() -> list[dict]:
+    """
+    Optional. Missing file just means general_location() falls back to the
+    named-seas/broad-ocean tiers only (still never returns None) — same
+    "optional CSV beside the script" shape as load_airports()/load_ports().
+    """
+    if not os.path.exists(COUNTRIES_PATH):
+        return []
+    try:
+        with open(COUNTRIES_PATH, encoding="utf-8") as fh:
+            return json.load(fh)
+    except (OSError, json.JSONDecodeError) as exc:
+        print(f"[geo] couldn't read {COUNTRIES_PATH}: {exc}", file=sys.stderr)
+        return []
+
+
+def _point_in_ring(lon: float, lat: float, ring: list[float]) -> bool:
+    """
+    Standard ray-casting point-in-polygon test. `ring` is the flat
+    [lon0, lat0, lon1, lat1, ...] encoding world_countries.json uses.
+    """
+    n = len(ring) // 2
+    inside = False
+    x, y = lon, lat
+    x1, y1 = ring[0], ring[1]
+    for i in range(1, n + 1):
+        x2, y2 = ring[(2 * i) % len(ring)], ring[(2 * i + 1) % len(ring)]
+        if ((y1 > y) != (y2 > y)) and (
+            x < (x2 - x1) * (y - y1) / ((y2 - y1) or 1e-12) + x1
+        ):
+            inside = not inside
+        x1, y1 = x2, y2
+    return inside
+
+
+def _country_containing(countries: list[dict], lat: float, lon: float) -> str | None:
+    for country in countries:
+        for ring in country.get("rings", []):
+            if len(ring) >= 6 and _point_in_ring(lon, lat, ring):
+                return country["name"]
+    return None
+
+
+# Beyond this, a "nearest country" guess stops being a reasonable "off the
+# coast of X" and starts being a guess about a country that's actually
+# nowhere near the position — degrees, not a great-circle distance, since
+# this is only ever a coarse approximation to begin with.
+NEAREST_COUNTRY_MAX_DEG = 3.0
+
+
+def _nearest_country(countries: list[dict], lat: float, lon: float) -> str | None:
+    """
+    Nearest-vertex approximation, not true edge distance — good enough for
+    "off the coast of X" and much cheaper than real polygon-distance math
+    over ~177 countries every pass.
+    """
+    best, best_d = None, 1e18
+    for country in countries:
+        for ring in country.get("rings", []):
+            for i in range(0, len(ring) - 1, 2):
+                dlon = (ring[i] - lon) * math.cos(math.radians(lat))
+                dlat = ring[i + 1] - lat
+                d = dlon * dlon + dlat * dlat
+                if d < best_d:
+                    best, best_d = country["name"], d
+    if best is None or best_d > NEAREST_COUNTRY_MAX_DEG ** 2:
+        return None
+    return f"off the coast of {best}"
+
+
+# Hand-curated, deliberately approximate bounding boxes — good enough to
+# name a body of water, not a navigational chart. (lat_min, lat_max,
+# lon_min, lon_max); a lon_min > lon_max entry wraps across the antimeridian
+# (only the Bering Sea needs this here).
+NAMED_SEAS = [
+    ("Mediterranean Sea", 30.0, 46.0, -6.0, 36.5),
+    ("Black Sea", 40.5, 47.5, 27.0, 42.0),
+    ("Red Sea", 12.0, 30.0, 32.0, 44.0),
+    ("Persian Gulf", 23.5, 30.5, 47.5, 56.5),
+    ("Caribbean Sea", 9.0, 22.0, -87.0, -60.0),
+    ("Gulf of Mexico", 18.0, 30.5, -98.0, -80.0),
+    ("North Sea", 51.0, 61.5, -4.0, 9.0),
+    ("Baltic Sea", 53.0, 66.0, 9.5, 30.5),
+    ("Sea of Japan", 34.0, 52.0, 127.0, 142.0),
+    ("East China Sea", 23.0, 33.0, 117.0, 131.0),
+    ("South China Sea", -3.0, 23.0, 99.0, 121.0),
+    ("Yellow Sea", 33.0, 41.0, 119.0, 126.5),
+    ("Sea of Okhotsk", 43.0, 62.0, 135.0, 165.0),
+    ("Bering Sea", 52.0, 66.0, 162.0, -157.0),
+    ("Arabian Sea", 5.0, 25.0, 55.0, 78.0),
+    ("Bay of Bengal", 5.0, 23.0, 78.0, 95.0),
+    ("Andaman Sea", 5.0, 18.0, 92.0, 99.0),
+    ("Adriatic Sea", 39.5, 45.8, 12.0, 20.0),
+    ("Aegean Sea", 35.0, 41.0, 23.0, 28.0),
+    ("Tasman Sea", -47.0, -30.0, 147.0, 174.0),
+    ("Coral Sea", -25.0, -10.0, 145.0, 165.0),
+    ("Java Sea", -8.5, -3.0, 105.0, 117.0),
+    ("Sea of Marmara", 40.0, 41.2, 26.0, 30.0),
+    ("Norwegian Sea", 62.0, 75.0, -5.0, 20.0),
+]
+
+
+def _in_lon_range(lon: float, lo: float, hi: float) -> bool:
+    if lo <= hi:
+        return lo <= lon <= hi
+    return lon >= lo or lon <= hi  # wraps across the antimeridian
+
+
+def _named_sea(lat: float, lon: float) -> str | None:
+    for name, lat_min, lat_max, lon_min, lon_max in NAMED_SEAS:
+        if lat_min <= lat <= lat_max and _in_lon_range(lon, lon_min, lon_max):
+            return name
+    return None
+
+
+def _broad_ocean(lat: float, lon: float) -> str:
+    """
+    The guaranteed catch-all — every valid (lat, lon) lands in exactly one
+    of these bands, so general_location() never has to return None for a
+    real position, even one nowhere near land or a named sea.
+    """
+    if lat > 66.5:
+        return "Arctic Ocean"
+    if lat < -60.0:
+        return "Southern Ocean"
+    if -70.0 <= lon < 20.0:
+        return "Atlantic Ocean"
+    if 20.0 <= lon < 100.0:
+        return "Indian Ocean"
+    if 100.0 <= lon < 147.0:
+        return "Pacific Ocean" if lat >= 0 else "Indian Ocean"
+    return "Pacific Ocean"
+
+
+def general_location(countries: list[dict], lat: float, lon: float) -> str:
+    """
+    Always resolves to something — this is the whole point of the fallback
+    (see the module comment above): a real fix that reached this function at
+    all deserves a real place name, not a second "unknown". Tries country
+    containment first (most specific), then "off the coast of X" for a near
+    miss, then a named sea, then a broad ocean band that can't fail.
+    """
+    return (
+        _country_containing(countries, lat, lon)
+        or _nearest_country(countries, lat, lon)
+        or _named_sea(lat, lon)
+        or _broad_ocean(lat, lon)
+    )
+
+
 def read_ais_cache() -> dict:
     """
     Latest known position per MMSI, written by ais_listener.py. This worker
@@ -896,7 +1084,7 @@ def read_ais_cache() -> dict:
         return {}
 
 
-def vessel_status(subject: Subject, prev: dict, ports, ais_cache: dict, now: int) -> dict | None:
+def vessel_status(subject: Subject, prev: dict, ports, ais_cache: dict, countries, now: int) -> dict | None:
     """
     The maritime mirror of flight_status() — see VesselStatus in Models.kt
     for the privacy rationale (port granularity only, self-reported
@@ -904,6 +1092,15 @@ def vessel_status(subject: Subject, prev: dict, ports, ais_cache: dict, now: int
     (stop open/close, 7-day pruning) is deliberately the same shape as the
     aircraft version, just swapping "on the ground" for "in port" and
     "airborne" for "underway".
+
+    Same one narrow exception flight_status() documents, applied a bit more
+    broadly: a real fresh AIS fix that matches no known port surfaces as
+    currentLat/currentLon/generalLocation instead of vanishing, current-pass
+    only, never written into recentStops/state.json. Unlike flights this
+    applies in BOTH IN_PORT and UNDERWAY states, not just one of them — a
+    vessel has no equivalent to LiveFlightTracker's separate live path, so
+    an underway fix with no port match is the closest thing to "live" this
+    feature can ever show for a boat.
     """
     if not subject.mmsi:
         return None
@@ -1072,6 +1269,16 @@ def vessel_status(subject: Subject, prev: dict, ports, ais_cache: dict, now: int
             {"bucket": b["bucket"], "seconds": b["seconds"]} for b in location_breakdown
         ],
         "trackedSeconds": tracked_seconds,
+        # The one exception to "never a coordinate" — see the docstring
+        # above. Only when a real fresh fix (moored or underway) matched no
+        # known port; None otherwise.
+        "currentLat": lat if (state in ("IN_PORT", "UNDERWAY") and here is None and lat is not None) else None,
+        "currentLon": lon if (state in ("IN_PORT", "UNDERWAY") and here is None and lon is not None) else None,
+        "generalLocation": (
+            general_location(countries, lat, lon)
+            if (state in ("IN_PORT", "UNDERWAY") and here is None and lat is not None and lon is not None)
+            else None
+        ),
     }
 
 
@@ -1279,6 +1486,7 @@ def build_snapshot() -> dict:
     ports_by_code = {row["unlocode"]: row for row in ports}
     used_unlocodes: set[str] = set()
     ais_cache = read_ais_cache()   # one local read per pass, no network call
+    countries = load_countries()   # see general_location()
 
     history = state.setdefault("history", {})
     news_cache = state.setdefault("news", {})
@@ -1336,13 +1544,13 @@ def build_snapshot() -> dict:
         drift = (value - prev_value) / float(elapsed)
 
         if passes % FLIGHT_EVERY == 0:
-            flight = flight_status(subject, state.setdefault("flights", {}), airports, now)
+            flight = flight_status(subject, state.setdefault("flights", {}), airports, countries, now)
             state.setdefault("flight_payload", {})[subject.id] = flight
         else:
             flight = state.get("flight_payload", {}).get(subject.id)
 
         if passes % VESSEL_EVERY == 0:
-            vessel = vessel_status(subject, state.setdefault("vessels", {}), ports, ais_cache, now)
+            vessel = vessel_status(subject, state.setdefault("vessels", {}), ports, ais_cache, countries, now)
             state.setdefault("vessel_payload", {})[subject.id] = vessel
         else:
             vessel = state.get("vessel_payload", {}).get(subject.id)
