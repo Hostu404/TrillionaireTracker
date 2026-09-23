@@ -26,3 +26,6 @@ SETUP-NOTES.md
 # and the backend/ copy itself is never meant to be tracked.
 backend/snapshot.json
 backend/__pycache__/
+
+# Scratch/output folder for ad-hoc files — not project source.
+coutput/

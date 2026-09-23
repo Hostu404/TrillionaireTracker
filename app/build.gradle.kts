@@ -13,8 +13,8 @@ android {
         applicationId = "com.hostu404.trilliontracker"
         minSdk = 26
         targetSdk = 35
-        versionCode = 1
-        versionName = "0.1.0"
+        versionCode = 2
+        versionName = "1.1.0"
     }
 
     buildTypes {
@@ -50,6 +50,10 @@ android {
 
     buildFeatures {
         compose = true
+        // So the header can show the real versionName above via
+        // BuildConfig.VERSION_NAME instead of a second, easy-to-forget
+        // hardcoded copy of it — one source of truth, in this same file.
+        buildConfig = true
     }
 
     packaging {
