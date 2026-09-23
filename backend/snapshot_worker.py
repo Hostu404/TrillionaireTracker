@@ -594,7 +594,12 @@ def flight_status(subject: Subject, prev: dict, airports, now: int) -> dict | No
     lat = ac.get("lat") if ac else None
     lon = ac.get("lon") if ac else None
     track = ac.get("track") if ac else None
-    here = nearest_airport(airports, lat, lon) if (airports and lat and lon) else None
+    # `is not None`, not truthy `lat and lon`: a real ADS-B fix can legitimately
+    # land exactly on the equator or the prime meridian (lat/lon == 0.0), and
+    # Python's truthiness would silently treat that as "no coordinates" -
+    # the same check already used correctly a few lines down at the estimate
+    # call and in vessel_status's equivalent line below.
+    here = nearest_airport(airports, lat, lon) if (airports and lat is not None and lon is not None) else None
 
     was = memory.get("state")
     stops: list[dict] = memory.setdefault("stops", [])

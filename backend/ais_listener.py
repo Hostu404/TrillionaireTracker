@@ -105,6 +105,16 @@ RECONNECT_BACKOFF_SECONDS = 10
 # world-sized box doesn't turn this into a firehose.
 WORLD_BOUNDING_BOX = [[[-90, -180], [90, 180]]]
 
+# Both message types apply_message() actually knows how to handle - not just
+# "PositionReport". The subscription used to filter to PositionReport alone,
+# which meant aisstream.io never sent a ShipStaticData (Message 5) frame at
+# all, so the `elif msg_type == "ShipStaticData"` branch in apply_message()
+# below was unreachable and selfReportedDestination could never be populated
+# from a live run - a documented feature that silently never worked because
+# the one message type it depends on was filtered out at the subscription
+# itself, not in this file's own parsing.
+SUBSCRIBED_MESSAGE_TYPES = ["PositionReport", "ShipStaticData"]
+
 # Set AIS_BURST_SECONDS to run this as a one-shot burst instead of a
 # forever-running listener — see "Two ways to run it" above. 0 (unset)
 # keeps the original continuous behavior.
@@ -260,7 +270,7 @@ async def run() -> None:
                 "APIKey": api_key,
                 "BoundingBoxes": WORLD_BOUNDING_BOX,
                 "FiltersShipMMSI": mmsis,
-                "FilterMessageTypes": ["PositionReport"],
+                "FilterMessageTypes": SUBSCRIBED_MESSAGE_TYPES,
             }))
             deadline = asyncio.get_running_loop().time() + BURST_SECONDS
             try:
@@ -283,7 +293,7 @@ async def run() -> None:
                     "APIKey": api_key,
                     "BoundingBoxes": WORLD_BOUNDING_BOX,
                     "FiltersShipMMSI": mmsis,
-                    "FilterMessageTypes": ["PositionReport"],
+                    "FilterMessageTypes": SUBSCRIBED_MESSAGE_TYPES,
                 }))
                 print("[ais] subscribed, listening…")
                 await _listen_once(ws, mmsis, deadline=None)

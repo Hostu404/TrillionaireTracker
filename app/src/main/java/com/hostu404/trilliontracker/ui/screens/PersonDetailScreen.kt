@@ -1192,9 +1192,21 @@ private fun buildTimelineSegments(
     airports: Map<String, AirportInfo>
 ): List<TimelineSegment> {
     val windowStart = nowEpoch - trackedSeconds
-    val ordered = recentStops
-        .sortedBy { it.arrivedAtEpoch }
-        .filter { (it.departedAtEpoch ?: nowEpoch) > windowStart }
+    val sorted = recentStops.sortedBy { it.arrivedAtEpoch }
+    val cutoffIndex = sorted.indexOfFirst { (it.departedAtEpoch ?: nowEpoch) > windowStart }
+    val ordered = if (cutoffIndex == -1) emptyList() else sorted.subList(cutoffIndex, sorted.size)
+    // A stop excluded above always had a real, confirmed departedAtEpoch (a
+    // still-parked stop's departedAtEpoch is null, which always passes the
+    // filter) - so if one was excluded, the plane definitely left an airport
+    // before windowStart. trackedSeconds (from the backend's own state
+    // history) and recentStops' epochs (from ADS-B) are two independently
+    // updated clocks and can disagree by a few minutes, so this anchor can
+    // sit just outside windowStart even for a fully-accounted-for leg.
+    // Without checking for it, that leg rendered as "No signal" instead of
+    // "In flight" - see the bug this fixes: a landed plane whose departure
+    // fell a few minutes before the computed window start showed its entire
+    // flight as unexplained no-signal time.
+    val hasConfirmedAnchorBefore = cutoffIndex > 0
 
     if (ordered.isEmpty()) {
         // No confirmed *stop* falls inside the window — but a plane that took
@@ -1226,9 +1238,9 @@ private fun buildTimelineSegments(
         val start = maxOf(stop.arrivedAtEpoch, windowStart)
         val end = (stop.departedAtEpoch ?: nowEpoch).coerceAtMost(nowEpoch)
         if (start > cursor) {
-            val isLeadingGap = segments.isEmpty()
-            val gapKey = if (isLeadingGap) "NO_SIGNAL" else "IN_FLIGHT"
-            val gapColor = if (isLeadingGap) TT.inkMuted else TT.warning
+            val unknown = segments.isEmpty() && !hasConfirmedAnchorBefore
+            val gapKey = if (unknown) "NO_SIGNAL" else "IN_FLIGHT"
+            val gapColor = if (unknown) TT.inkMuted else TT.warning
             segments += TimelineSegment(bucketLabel(gapKey, airports), cursor, start, gapColor)
         }
         if (end > start) {
@@ -1377,9 +1389,16 @@ private fun buildVesselTimelineSegments(
     ports: Map<String, PortInfo>
 ): List<TimelineSegment> {
     val windowStart = nowEpoch - trackedSeconds
-    val ordered = recentStops
-        .sortedBy { it.arrivedAtEpoch }
-        .filter { (it.departedAtEpoch ?: nowEpoch) > windowStart }
+    val sorted = recentStops.sortedBy { it.arrivedAtEpoch }
+    val cutoffIndex = sorted.indexOfFirst { (it.departedAtEpoch ?: nowEpoch) > windowStart }
+    val ordered = if (cutoffIndex == -1) emptyList() else sorted.subList(cutoffIndex, sorted.size)
+    // Same fix, same reasoning as buildTimelineSegments above: a stop
+    // excluded here always had a real, confirmed departedAtEpoch, so its
+    // existence means the vessel definitely left a port before windowStart
+    // even though trackedSeconds and recentStops can disagree by a few
+    // minutes. Without this, a completed port-to-port leg rendered as "No
+    // signal" instead of "Underway".
+    val hasConfirmedAnchorBefore = cutoffIndex > 0
 
     if (ordered.isEmpty()) {
         // Same fix as buildTimelineSegments' matching branch above: a yacht
@@ -1405,9 +1424,9 @@ private fun buildVesselTimelineSegments(
         val start = maxOf(stop.arrivedAtEpoch, windowStart)
         val end = (stop.departedAtEpoch ?: nowEpoch).coerceAtMost(nowEpoch)
         if (start > cursor) {
-            val isLeadingGap = segments.isEmpty()
-            val gapKey = if (isLeadingGap) "NO_SIGNAL" else "UNDERWAY"
-            val gapColor = if (isLeadingGap) TT.inkMuted else TT.warning
+            val unknown = segments.isEmpty() && !hasConfirmedAnchorBefore
+            val gapKey = if (unknown) "NO_SIGNAL" else "UNDERWAY"
+            val gapColor = if (unknown) TT.inkMuted else TT.warning
             segments += TimelineSegment(vesselBucketLabel(gapKey, ports), cursor, start, gapColor)
         }
         if (end > start) {

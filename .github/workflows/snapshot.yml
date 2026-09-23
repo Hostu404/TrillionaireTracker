@@ -62,7 +62,33 @@ jobs:
           git add backend/state.json backend/airports.csv docs/snapshot.json
           if git diff --cached --quiet; then
             echo "nothing changed, skipping commit"
-          else
-            git commit -m "Refresh snapshot ($(date -u +%Y-%m-%dT%H:%M:%SZ))"
-            git push
+            exit 0
           fi
+          git commit -m "Refresh snapshot ($(date -u +%Y-%m-%dT%H:%M:%SZ))"
+
+          # This job and ais.yml both run on the same 5-minute cron and both
+          # push straight to main. concurrency: only serializes runs of THIS
+          # workflow against each other — it does nothing for a push landing
+          # on main from the other workflow at the same moment, which is
+          # exactly the "! [rejected] main -> main (fetch first)" failure
+          # ais.yml hit. Rebasing this one commit onto whatever just landed
+          # and retrying the push turns that race into a self-healing no-op
+          # instead of a failed run, since the two workflows never touch the
+          # same files (this one only ever writes backend/state.json,
+          # backend/airports.csv, docs/snapshot.json), so the rebase itself
+          # can't conflict.
+          for attempt in 1 2 3 4 5; do
+            if git push; then
+              exit 0
+            fi
+            echo "push rejected (attempt $attempt/5) — another workflow committed first, rebasing onto origin/main and retrying"
+            git fetch origin main
+            if ! git rebase origin/main; then
+              echo "rebase hit a real conflict — bailing out rather than pushing something broken; next scheduled run will pick this up"
+              git rebase --abort
+              exit 1
+            fi
+            sleep $((RANDOM % 5 + 1))
+          done
+          echo "push still rejected after 5 retries — giving up this run; next scheduled run will retry"
+          exit 1
