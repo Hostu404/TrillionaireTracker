@@ -50,34 +50,50 @@ jobs:
             echo "No AIS traffic heard for any tracked vessel this burst — nothing to commit."
             exit 0
           fi
-          git add backend/ais_cache.json
-          if git diff --cached --quiet; then
-            echo "nothing changed, skipping commit"
-            exit 0
-          fi
-          git commit -m "Refresh AIS cache ($(date -u +%Y-%m-%dT%H:%M:%SZ))"
+
+          # Stash this run's freshly heard AIS cache somewhere a `git reset
+          # --hard` below can't touch it — see snapshot.yml's version of this
+          # same loop for why it resets instead of rebasing.
+          mkdir -p /tmp/ais-out
+          cp backend/ais_cache.json /tmp/ais-out/ais_cache.json
 
           # This job and snapshot.yml both run on the same 5-minute cron and
-          # both push straight to main. concurrency: only serializes runs of
-          # THIS workflow against each other — it does nothing for a push
-          # landing on main from the other workflow at the same moment, which
-          # is exactly the "! [rejected] main -> main (fetch first)" failure
-          # this was written to fix. Rebasing this one commit onto whatever
-          # just landed and retrying the push turns that race into a self-
-          # healing no-op instead of a failed run, since the two workflows
-          # never touch the same files (this one only ever writes
-          # backend/ais_cache.json), so the rebase itself can't conflict.
+          # both push straight to main, and this workflow can also overlap
+          # with itself (a manual workflow_dispatch landing close to a
+          # scheduled run) — concurrency: only serializes runs of THIS
+          # workflow's *jobs*, it doesn't stop a push from a still-in-flight
+          # run landing on main in the gap between this run's checkout and
+          # its own push. Against snapshot.yml that gap is harmless (it never
+          # touches backend/ais_cache.json), but two overlapping runs of THIS
+          # workflow both rewrite that same file wholesale, and rebasing one
+          # full rewrite onto another is a real conflict, not a bug in the
+          # rebase — see snapshot.yml's incident for exactly this happening
+          # to its own state.json/snapshot.json.
+          #
+          # This run's cache is already a complete, self-contained result of
+          # its own burst window, so "newest write wins" is always correct —
+          # there's no real merge to do. So instead of rebasing a diff, each
+          # retry resets straight onto the latest main and re-stamps this
+          # run's already-captured cache on top as a fresh commit — an
+          # overwrite, not a merge, so there's nothing left for git to
+          # conflict over.
           for attempt in 1 2 3 4 5; do
+            git fetch origin main
+            git reset --hard origin/main
+
+            cp /tmp/ais-out/ais_cache.json backend/ais_cache.json
+
+            git add backend/ais_cache.json
+            if git diff --cached --quiet; then
+              echo "nothing changed against latest main, skipping commit"
+              exit 0
+            fi
+            git commit -m "Refresh AIS cache ($(date -u +%Y-%m-%dT%H:%M:%SZ))"
+
             if git push; then
               exit 0
             fi
-            echo "push rejected (attempt $attempt/5) — another workflow committed first, rebasing onto origin/main and retrying"
-            git fetch origin main
-            if ! git rebase origin/main; then
-              echo "rebase hit a real conflict — bailing out rather than pushing something broken; next scheduled run will pick this up"
-              git rebase --abort
-              exit 1
-            fi
+            echo "push rejected (attempt $attempt/5) — another push landed first; re-syncing to latest main and re-stamping this run's output instead of rebasing"
             sleep $((RANDOM % 5 + 1))
           done
           echo "push still rejected after 5 retries — giving up this run; next scheduled run will retry"
