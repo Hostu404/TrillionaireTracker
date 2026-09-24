@@ -15,6 +15,11 @@ An Android app, built with Kotlin and Jetpack Compose, that tracks the world's r
 - **Biography & news** — birthdate (age computed live, never stored), city-level residence, a short sourced bio, a Wikipedia summary and free-license photo, and link-outs for news/social — nothing scraped or embedded live.
 - **Self-managing backend** — every time series (prices, flight/vessel history, the trillionaire-crossing log) trims itself to a real rolling 7 days automatically, so the data and the repo it lives in stay flat-sized forever.
 
+## Why is Trillionaire Tracker?
+
+https://youtube.com/watch?v=wP8RgWJ76xE
+
+
 ## How it works
 
 One backend worker polls upstream sources on a schedule and publishes a single `snapshot.json` to a free CDN; every client just reads that cached file, so upstream cost is flat no matter how many people install the app.
