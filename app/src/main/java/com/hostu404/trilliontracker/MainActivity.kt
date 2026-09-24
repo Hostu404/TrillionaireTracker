@@ -4,6 +4,8 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.compose.animation.EnterTransition
+import androidx.compose.animation.ExitTransition
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
@@ -132,6 +134,28 @@ private fun App() {
         NavHost(
             navController = navController,
             startDestination = "tracker",
+            // None of the three destinations below override these, which
+            // means every navigate()/popBackStack() was picking up
+            // NavHost's own default animation — a timed crossfade between
+            // the outgoing and incoming destination. That default is
+            // exactly the kind of thing that can produce the sort of
+            // one-off, unreproducible blank frame reported after hitting
+            // back: for one frame mid-crossfade, depending on exactly when
+            // the incoming destination's first composition lands relative
+            // to the outgoing one's fade-out, there's a real (if narrow)
+            // window where neither is opaque yet — which reads as "nothing
+            // rendered, just the background," since App()'s Saturn image/
+            // scrim/overlays sit underneath and keep painting regardless.
+            // Every screen here is a full HUD panel replacing the last, not
+            // a peek-through/parallax transition, so there's no visual
+            // reason to animate between them in the first place — an
+            // instant cut removes the crossfade window entirely rather than
+            // just narrowing it, which is the only way to be sure this
+            // specific class of gap can't recur.
+            enterTransition = { EnterTransition.None },
+            exitTransition = { ExitTransition.None },
+            popEnterTransition = { EnterTransition.None },
+            popExitTransition = { ExitTransition.None },
             modifier = Modifier
                 .fillMaxSize()
                 .statusBarsPadding()
