@@ -25,7 +25,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.BiasAlignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.shadow
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -62,6 +61,10 @@ import com.hostu404.trilliontracker.data.VesselStatus
 import com.hostu404.trilliontracker.data.WorldGeo
 import kotlinx.coroutines.delay
 import kotlin.math.roundToInt
+import kotlin.math.sin
+import kotlin.math.cos
+import kotlin.math.asin
+import kotlin.math.sqrt
 import com.hostu404.trilliontracker.ui.Format
 import com.hostu404.trilliontracker.ui.TrackerUiState
 import com.hostu404.trilliontracker.ui.awaitAppForeground
@@ -74,7 +77,9 @@ import com.hostu404.trilliontracker.ui.components.TimelineStrip
 import com.hostu404.trilliontracker.ui.components.honeycombGlowCell
 import com.hostu404.trilliontracker.ui.components.hudCorners
 import com.hostu404.trilliontracker.ui.components.hudTouchable
+import com.hostu404.trilliontracker.ui.components.rubberBandPhotoDrag
 import com.hostu404.trilliontracker.ui.components.sickeningChromaticAberration
+import com.hostu404.trilliontracker.ui.components.hudPhotoGradeFilter
 import com.hostu404.trilliontracker.ui.components.RollingNumber
 import com.hostu404.trilliontracker.ui.components.Sparkline
 import com.hostu404.trilliontracker.ui.components.StatusChip
@@ -171,6 +176,16 @@ fun PersonDetailScreen(
                     birthDate = person.birthDate,
                     residence = person.residence,
                     socialUrl = person.socialUrl,
+                    // Strictly "moving right now," matching TrackerScreen's
+                    // own PersonRow definition (state == AIRBORNE / UNDERWAY,
+                    // not merely a confirmed-but-parked fix) — see that
+                    // file's 2026-09-24 comment for why the two need to
+                    // agree: this header is the thing the list's own
+                    // transit indicator sends someone to, so if the list
+                    // lights up, this is where they land expecting to see it
+                    // confirmed.
+                    isAirborneNow = person.flight?.state == FlightState.AIRBORNE,
+                    isUnderwayNow = person.vessel?.state == VesselState.UNDERWAY,
                     onBack = onBack
                 )
             }
@@ -430,7 +445,9 @@ private fun OutlinedWhiteText(
     fontSize: TextUnit,
     modifier: Modifier = Modifier,
     color: Color = Color.White,
-    fontWeight: FontWeight? = null
+    fontWeight: FontWeight? = null,
+    fontFamily: FontFamily? = null,
+    letterSpacing: TextUnit = TextUnit.Unspecified
 ) {
     val nudge = 0.6.dp
     val outlineColor = Color.Black.copy(alpha = 0.75f)
@@ -443,6 +460,8 @@ private fun OutlinedWhiteText(
                 text = text,
                 fontSize = fontSize,
                 fontWeight = fontWeight,
+                fontFamily = fontFamily,
+                letterSpacing = letterSpacing,
                 color = outlineColor,
                 modifier = Modifier.offset(x = dx, y = dy)
             )
@@ -451,6 +470,8 @@ private fun OutlinedWhiteText(
             text = text,
             fontSize = fontSize,
             fontWeight = fontWeight,
+            fontFamily = fontFamily,
+            letterSpacing = letterSpacing,
             color = color
         )
     }
@@ -465,6 +486,8 @@ private fun PersonHeader(
     birthDate: String?,
     residence: String?,
     socialUrl: String?,
+    isAirborneNow: Boolean,
+    isUnderwayNow: Boolean,
     onBack: () -> Unit
 ) {
     val uriHandler = LocalUriHandler.current
@@ -501,8 +524,26 @@ private fun PersonHeader(
                 // anyone's head — no matter which photo loads here.
                 alignment = BiasAlignment(horizontalBias = 0f, verticalBias = -0.6f),
                 placeholder = ColorPainter(TT.surface),
+                // The "universal filter" — desaturates and tints every photo
+                // toward this app's own palette before anything else touches
+                // it, so a raw, naturally-lit photo doesn't clash with the
+                // near-monochrome cyan-on-black HUD around it. Applied here
+                // (baked into the image's own draw call) rather than as a
+                // Modifier, so sickeningChromaticAberration below draws the
+                // already-graded pixels three times, not the raw photo.
+                colorFilter = hudPhotoGradeFilter,
+                // Pull-and-release "reflex" gesture — drag the photo around
+                // inside its own frame, let go and it snaps back with a
+                // rubber-band spring. Placed before sickeningChromaticAberration
+                // so the glitch effect's three re-draws pick up wherever the
+                // photo currently sits, riding along with a pull instead of
+                // staying pinned in place under it. The frame's own .clip(shape)
+                // on the outer Box (not this Modifier chain) is what actually
+                // keeps a pull from spilling outside the header — see
+                // [rubberBandPhotoDrag]'s own doc comment.
                 modifier = Modifier
                     .fillMaxSize()
+                    .rubberBandPhotoDrag()
                     .sickeningChromaticAberration()
             )
         } else {
@@ -537,51 +578,127 @@ private fun PersonHeader(
             modifier = Modifier
                 .align(Alignment.BottomStart)
                 .fillMaxWidth()
+                .then(
+                    // The header's own "in transit" light — added
+                    // 2026-09-24 alongside the strict AIRBORNE/UNDERWAY
+                    // check above, so the same glow that flags a row on the
+                    // list (TrackerScreen's PersonRow) is what someone
+                    // actually finds when they tap through to confirm it.
+                    // Placed on this Column (drawn after the photo and its
+                    // scrim, not before) so the wash shows up over the dark
+                    // gradient behind the readout text instead of getting
+                    // buried under the photo itself.
+                    if (isAirborneNow || isUnderwayNow) {
+                        Modifier.honeycombGlowCell(xFraction = 0.22f, yFraction = 0.06f, color = TT.warning)
+                    } else {
+                        Modifier
+                    }
+                )
                 .padding(horizontal = 14.dp, vertical = 10.dp)
         ) {
+            // Readout treatment added 2026-09-24, once the photo itself got
+            // graded toward the app's own palette (see hudPhotoGradeFilter):
+            // the caption block underneath it was still set in a plain
+            // human caption style (proportional font, sentence-case "Lives
+            // in X"/"Born Y" prose), which read as a normal photo caption
+            // sitting on top of an otherwise fully HUD photo. Everything
+            // below is now built from the same vocabulary the rest of the
+            // screen already uses — TT.monoNumeric for anything that reads
+            // as a data field (exactly what the net worth ticker and tail
+            // numbers already do), uppercase+letter-spaced labels the way
+            // SectionLabel's "[ BIOGRAPHY ]" brackets do, TT.accentCyan for
+            // chrome/labels only, never for the subject's own name (that
+            // stays plain white — a label isn't data about the person, it's
+            // UI chrome, same rule the header/border-color split follows
+            // everywhere else).
+            // "[ SUBJECT ]" eyebrow removed 2026-09-24 (same pass as the
+            // in-transit indicator it used to sit next to) — the transit
+            // chip below is the only thing that still belongs on this line,
+            // and it now only renders — with its own Spacer(4.dp) — when
+            // there's actually something to say, rather than leaving a
+            // near-empty Row + gap sitting above the name on every profile
+            // that isn't currently AIRBORNE/UNDERWAY.
+            if (isAirborneNow || isUnderwayNow) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    if (isAirborneNow) {
+                        Text(
+                            text = "[ ✈ AIRBORNE ]",
+                            color = TT.warning,
+                            fontSize = 10.sp,
+                            fontFamily = TT.monoNumeric,
+                            fontWeight = FontWeight.SemiBold,
+                            letterSpacing = 1.sp
+                        )
+                    }
+                    if (isUnderwayNow) {
+                        if (isAirborneNow) {
+                            Spacer(Modifier.width(6.dp))
+                        }
+                        Text(
+                            text = "[ ⚓ UNDERWAY ]",
+                            color = TT.warning,
+                            fontSize = 10.sp,
+                            fontFamily = TT.monoNumeric,
+                            fontWeight = FontWeight.SemiBold,
+                            letterSpacing = 1.sp
+                        )
+                    }
+                }
+                Spacer(Modifier.height(4.dp))
+            }
             OutlinedWhiteText(
-                text = name,
+                text = name.uppercase(),
                 color = Color.White,
-                fontSize = 20.sp,
-                fontWeight = FontWeight.SemiBold
+                fontSize = 21.sp,
+                fontWeight = FontWeight.Bold,
+                fontFamily = TT.monoNumeric,
+                letterSpacing = 0.5.sp
             )
-            OutlinedWhiteText(text = company, color = Color.White.copy(alpha = 0.78f), fontSize = 13.sp)
+            OutlinedWhiteText(
+                text = "// ${company.uppercase()}",
+                color = TT.accentCyan,
+                fontSize = 12.sp,
+                fontFamily = TT.monoNumeric,
+                letterSpacing = 0.5.sp
+            )
 
             if (age != null && birthLabel != null) {
-                Spacer(Modifier.height(3.dp))
+                Spacer(Modifier.height(4.dp))
                 OutlinedWhiteText(
-                    text = "Age $age · Born $birthLabel",
-                    color = Color.White.copy(alpha = 0.62f),
-                    fontSize = 11.sp
+                    text = "AGE $age  ·  BORN ${birthLabel.uppercase()}",
+                    color = Color.White.copy(alpha = 0.7f),
+                    fontSize = 11.sp,
+                    fontFamily = TT.monoNumeric,
+                    letterSpacing = 0.3.sp
                 )
             }
 
             if (residence != null || wikipediaUrl != null) {
-                Spacer(Modifier.height(4.dp))
+                Spacer(Modifier.height(6.dp))
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     if (residence != null) {
                         Text(
-                            text = "Lives in $residence ↗",
+                            text = "[ ${residence.uppercase()} ↗ ]",
                             color = TT.accentCyan,
                             fontSize = 11.sp,
+                            fontFamily = TT.monoNumeric,
+                            letterSpacing = 0.5.sp,
                             modifier = Modifier
                                 .padding(2.dp)
                                 .clickable { uriHandler.openUri(townMapUrl(residence)) }
                         )
                     }
                     if (residence != null && wikipediaUrl != null) {
-                        Text(
-                            text = "   ·   ",
-                            color = Color.White.copy(alpha = 0.4f),
-                            fontSize = 11.sp
-                        )
+                        Spacer(Modifier.width(6.dp))
                     }
                     if (wikipediaUrl != null) {
                         Text(
-                            text = "Wikipedia ↗",
+                            text = "[ WIKIPEDIA ↗ ]",
                             color = TT.accentCyan,
                             fontSize = 11.sp,
+                            fontFamily = TT.monoNumeric,
                             fontWeight = FontWeight.Medium,
+                            letterSpacing = 0.5.sp,
                             modifier = Modifier
                                 .padding(2.dp)
                                 .clickable { uriHandler.openUri(wikipediaUrl) }
@@ -591,55 +708,51 @@ private fun PersonHeader(
             }
         }
 
-        // Nested into the banner's own top-left chamfer rather than sitting
-        // above it — same [TT.panelShape] cut the whole photo is clipped to,
-        // so the button's corner and the photo's corner read as one bevel,
-        // not two different shapes stacked together.
+        // Briefly reshaped on 2026-09-24 to nest into the banner's own
+        // 14dp chamfer (matching the photo's own clip exactly); reverted
+        // the same day back to FamilyHistoryScreen's original back-button
+        // chip instead — its 10dp cut, "← Back" text, and lack of a drop
+        // shadow was the design worth keeping, so this button now matches
+        // THAT one rather than the other way around (see BackRow's own doc
+        // comment over there). The one thing that still has to differ is
+        // the fill: a translucent black here, not FamilyHistoryScreen's
+        // opaque [TT.surfaceRaised] — this button sits directly on top of
+        // an arbitrary photo and needs the dark tint to stay legible
+        // against whatever image loaded, where that screen's plain dark
+        // background never had that problem.
         Box(
             modifier = Modifier
                 .align(Alignment.TopStart)
-                // Shadow before this Box's own .clip() — clip would cut off
-                // anything drawn after it, elevation included, so this can't
-                // go through hudTouchable's own (otherwise equivalent)
-                // elevation param here.
-                .shadow(
-                    elevation = 1.5.dp,
-                    shape = TT.panelShape(14.dp),
-                    ambientColor = TT.accentCyan.copy(alpha = 0.55f),
-                    spotColor = TT.accentCyan.copy(alpha = 0.55f)
-                )
-                .clip(TT.panelShape(14.dp))
+                .clip(TT.panelShape(10.dp))
                 .background(Color.Black.copy(alpha = 0.55f))
-                .border(1.dp, TT.borderBright, TT.panelShape(14.dp))
+                .border(1.dp, TT.border, TT.panelShape(10.dp))
                 .hudTouchable(cornerLength = 6.dp, cornerInset = 2.dp, onClick = onBack)
-                .padding(start = 14.dp, top = 9.dp, end = 11.dp, bottom = 8.dp)
+                .padding(horizontal = 14.dp, vertical = 8.dp)
         ) {
             Text(
-                text = "←",
+                text = "← Back",
                 color = TT.accentCyan,
-                fontSize = 18.sp,
-                fontWeight = FontWeight.Bold
+                fontSize = 13.sp,
+                fontWeight = FontWeight.Medium
             )
         }
 
-        // The mirror image of the back button above — same chip, same
-        // chamfer, opposite corner. Link-out only, never embedded (see
-        // [socialPlatformGlyph]'s own doc comment for why).
+        // The mirror image of the back button above — same chip style,
+        // opposite corner — kept matching it when that button's own
+        // shape/shadow changed (2026-09-24 revert), so the two corners of
+        // this header still agree with each other even though neither one
+        // nests into the photo's own 14dp clip anymore. Link-out only,
+        // never embedded (see [socialPlatformGlyph]'s own doc comment for
+        // why).
         if (socialUrl != null) {
             Box(
                 modifier = Modifier
                     .align(Alignment.TopEnd)
-                    .shadow(
-                        elevation = 1.5.dp,
-                        shape = TT.panelShape(14.dp),
-                        ambientColor = TT.accentCyan.copy(alpha = 0.55f),
-                        spotColor = TT.accentCyan.copy(alpha = 0.55f)
-                    )
-                    .clip(TT.panelShape(14.dp))
+                    .clip(TT.panelShape(10.dp))
                     .background(Color.Black.copy(alpha = 0.55f))
-                    .border(1.dp, TT.borderBright, TT.panelShape(14.dp))
+                    .border(1.dp, TT.border, TT.panelShape(10.dp))
                     .hudTouchable(cornerLength = 6.dp, cornerInset = 2.dp) { uriHandler.openUri(socialUrl) }
-                    .padding(start = 11.dp, top = 9.dp, end = 14.dp, bottom = 8.dp)
+                    .padding(horizontal = 14.dp, vertical = 8.dp)
             ) {
                 Text(
                     text = socialPlatformGlyph(socialUrl),
@@ -782,6 +895,19 @@ private fun FlightCard(
             }
         )
 
+        // The raw fix behind the "(approximate — no known airport nearby)"
+        // line above, spelled out as text. The number was already being
+        // used to place the dashed "approximate" pin on the map (see
+        // flightMapPin) — this doesn't surface it anywhere new, just also
+        // renders as text where a pin already showed it. Same lifetime as
+        // the fields it reads: current-pass only, never persisted.
+        if (flight.state == FlightState.ON_GROUND && flight.currentLat != null && flight.currentLon != null) {
+            DetailRow(
+                label = "Coordinates",
+                value = Format.coordinate(flight.currentLat, flight.currentLon)
+            )
+        }
+
         Spacer(Modifier.height(8.dp))
 
         flight.departedIcao?.let { dep ->
@@ -819,6 +945,17 @@ private fun FlightCard(
             }
 
             FlightState.UNKNOWN -> Unit
+        }
+
+        // Straight-line total across confirmed airport-to-airport legs on
+        // record (see flightTripDistanceNm's doc comment) — an honest, if
+        // approximate, answer to "how far has this actually flown lately,"
+        // built entirely from history already collected. Null (nothing
+        // shown) until at least two stops in the trailing window resolve to
+        // a known airport with coordinates.
+        flightTripDistanceNm(flight.recentStops, airports)?.let { nm ->
+            Spacer(Modifier.height(8.dp))
+            DetailRow(label = "Distance (7d)", value = Format.nauticalMiles(nm))
         }
 
         // lastSeenEpoch == 0 means "never actually seen" (an identity with no
@@ -901,9 +1038,10 @@ private fun LocationHistoryCard(stops: List<AirportStop>, nowSeconds: Long, airp
 /**
  * The maritime mirror of [FlightCard] — same publishing rule, same
  * granularity limits. The one thing planes don't have: a self-reported
- * destination straight from the vessel's own AIS broadcast. It's shown, but
- * clearly labeled as crew-entered and unverified — it's routinely blank,
- * stale, or informal shorthand, nothing like a filed flight plan.
+ * destination (and, added 2026-09-24, an ETA) straight from the vessel's
+ * own AIS broadcast. It's shown, but clearly labeled as crew-entered and
+ * unverified — it's routinely blank, stale, or informal shorthand, nothing
+ * like a filed flight plan.
  */
 @Composable
 private fun BoatCard(
@@ -914,11 +1052,22 @@ private fun BoatCard(
 ) {
     val uriHandler = LocalUriHandler.current
     fun label(unlocode: String) = ports[unlocode]?.label ?: unlocode
-    // Vessels don't have a distinct "confirmed dropped signal" flag the way
-    // flights do (see FlightCard's signalLost) — UNKNOWN is the one muted
-    // state here, so it gets the single softer warning glow rather than a
-    // severity split.
-    val glowColor = if (vessel.state == VesselState.UNKNOWN) TT.warning else null
+    // Added 2026-09-24: vessels now have the same "confirmed dropped signal"
+    // distinction flights do — see FlightCard's signalLost and
+    // VesselStatus.currentBucket's doc comment. Same rule as FlightCard's
+    // glowColor: flag this card only when there's actually something worth
+    // flagging (a confirmed SIGNAL_LOST), not for the everyday "haven't
+    // heard from it in a bit" gap — AIS coverage here is shore-based, so an
+    // ordinary ocean crossing can go days unheard with nothing wrong at
+    // all, and that's an even worse reason to glow amber than a plane's
+    // equivalent short gap already was. A previous version of this card
+    // glowed amber for any plain UNKNOWN reading; that's the one asymmetry
+    // between the two cards this removes — quiet unless it's actually lost.
+    val signalLost = vessel.state == VesselState.UNKNOWN && vessel.currentBucket == "SIGNAL_LOST"
+    val glowColor = when {
+        signalLost -> TT.critical
+        else -> null
+    }
 
     Column(
         Modifier
@@ -952,12 +1101,14 @@ private fun BoatCard(
         Spacer(Modifier.height(8.dp))
 
         Row(verticalAlignment = Alignment.CenterVertically) {
-            when (vessel.state) {
-                VesselState.UNDERWAY ->
+            when {
+                vessel.state == VesselState.UNDERWAY ->
                     StatusChip(glyph = "⚓", label = "UNDERWAY NOW", color = TT.warning)
-                VesselState.IN_PORT ->
+                vessel.state == VesselState.IN_PORT ->
                     StatusChip(glyph = "●", label = "IN PORT", color = TT.inkSecondary)
-                VesselState.UNKNOWN ->
+                signalLost ->
+                    StatusChip(glyph = "!", label = "SIGNAL LOST", color = TT.critical)
+                else ->
                     StatusChip(glyph = "?", label = "NO SIGNAL", color = TT.inkMuted)
             }
             Spacer(Modifier.width(8.dp))
@@ -987,9 +1138,26 @@ private fun BoatCard(
                 vessel.generalLocation != null ->
                     "${vessel.generalLocation} (approximate — no known port nearby)"
                 vessel.state == VesselState.UNDERWAY -> "At sea — no fixed location"
+                signalLost && vessel.probablePortUnlocode != null ->
+                    "Possibly arrived near ${label(vessel.probablePortUnlocode)} (unconfirmed)"
+                signalLost -> "Possibly arrived — location unclear (unconfirmed)"
                 else -> "No signal"
             }
         )
+
+        // The maritime mirror of FlightCard's identical addition above — the
+        // raw fix behind "(approximate — no known port nearby)", spelled out
+        // as text next to the same number already placing the dashed
+        // "approximate" pin (see vesselMapPin). No state check needed here,
+        // same as the generalLocation branch just above: currentLat/currentLon
+        // are only ever set (IN_PORT or UNDERWAY) when there's a real fix
+        // with no port match — see VesselStatus.currentLat's doc comment.
+        if (vessel.currentLat != null && vessel.currentLon != null) {
+            DetailRow(
+                label = "Coordinates",
+                value = Format.coordinate(vessel.currentLat, vessel.currentLon)
+            )
+        }
 
         Spacer(Modifier.height(8.dp))
 
@@ -1005,14 +1173,35 @@ private fun BoatCard(
         when (vessel.state) {
             VesselState.UNDERWAY -> {
                 Spacer(Modifier.height(8.dp))
-                if (vessel.selfReportedDestination != null) {
-                    DetailRow(label = "Destination", value = vessel.selfReportedDestination + " (self-reported)")
-                } else {
-                    Text(
-                        text = "At sea — no destination currently broadcast.",
-                        color = TT.inkMuted,
-                        fontSize = 13.sp
-                    )
+                // Self-reported beats estimated when both exist — crew-entered
+                // text beats a course guess, same priority a confirmed
+                // arrivedIcao gets over FlightStatus's own estimate. Falls
+                // through to the live heading-based guess (the maritime
+                // mirror of FlightCard's "Heading toward X (est.)" below)
+                // only when nothing was self-reported, closing the asymmetry
+                // where boats never got a live destination guess the way
+                // planes always have while airborne.
+                when {
+                    vessel.selfReportedDestination != null -> {
+                        DetailRow(
+                            label = "Destination",
+                            value = vessel.selfReportedDestination + " (self-reported)" +
+                                (vessel.selfReportedEta?.let { "  ·  ETA $it" } ?: "")
+                        )
+                    }
+                    vessel.estimatedDestinationPortUnlocode != null -> {
+                        DetailRow(
+                            label = "Heading toward",
+                            value = label(vessel.estimatedDestinationPortUnlocode) + " (est.)"
+                        )
+                    }
+                    else -> {
+                        Text(
+                            text = "At sea — course doesn't point clearly at a known port yet.",
+                            color = TT.inkMuted,
+                            fontSize = 13.sp
+                        )
+                    }
                 }
             }
 
@@ -1028,6 +1217,13 @@ private fun BoatCard(
             }
 
             VesselState.UNKNOWN -> Unit
+        }
+
+        // The maritime mirror of FlightCard's identical addition above — see
+        // vesselTripDistanceNm's doc comment.
+        vesselTripDistanceNm(vessel.recentStops, ports)?.let { nm ->
+            Spacer(Modifier.height(8.dp))
+            DetailRow(label = "Distance (7d)", value = Format.nauticalMiles(nm))
         }
 
         if (vessel.lastSeenEpoch > 0) {
@@ -1178,6 +1374,58 @@ private fun rememberLiveNews(query: String, seedNews: List<NewsItem>): List<News
 }
 
 private const val LIVE_NEWS_POLL_MILLIS = 5 * 60_000L
+
+/**
+ * Straight-line ("great-circle") distance between two points, nautical
+ * miles — the same haversine formula backend/snapshot_worker.py's own
+ * _haversine_nm() uses, so the client and backend never drift into
+ * disagreeing about what a nautical mile between two coordinates is.
+ */
+private fun haversineNm(lat1: Double, lon1: Double, lat2: Double, lon2: Double): Double {
+    val r = 3440.065
+    val p1 = Math.toRadians(lat1)
+    val p2 = Math.toRadians(lat2)
+    val dPhi = Math.toRadians(lat2 - lat1)
+    val dLambda = Math.toRadians(lon2 - lon1)
+    val a = sin(dPhi / 2).let { it * it } + cos(p1) * cos(p2) * sin(dLambda / 2).let { it * it }
+    return 2 * r * asin(sqrt(a))
+}
+
+/**
+ * Straight-line total across confirmed stop-to-stop legs in [stops] — an
+ * honest lower bound on distance actually traveled (a real flight path
+ * curves, refuels, diverts; this is "as the crow flies" leg by leg summed
+ * up), not a claim about the literal route flown. Only ever built from
+ * [FlightStatus.recentStops], the same trailing-window data the timeline
+ * strip and map pins already draw from — no new tracking, no new position
+ * source, just arithmetic on airport-to-airport legs already on record.
+ * Null when fewer than two stops resolve to a known airport with
+ * coordinates — same "we don't guess" rule as everywhere else in this app.
+ */
+private fun flightTripDistanceNm(stops: List<AirportStop>, airports: Map<String, AirportInfo>): Double? {
+    val coords = stops.sortedBy { it.arrivedAtEpoch }.mapNotNull { stop ->
+        airports[stop.icao]?.let { info ->
+            if (info.lat != null && info.lon != null) info.lat to info.lon else null
+        }
+    }
+    if (coords.size < 2) return null
+    return (1 until coords.size).sumOf { i ->
+        haversineNm(coords[i - 1].first, coords[i - 1].second, coords[i].first, coords[i].second)
+    }
+}
+
+/** The maritime mirror of [flightTripDistanceNm] — see its doc comment. */
+private fun vesselTripDistanceNm(stops: List<PortStop>, ports: Map<String, PortInfo>): Double? {
+    val coords = stops.sortedBy { it.arrivedAtEpoch }.mapNotNull { stop ->
+        ports[stop.unlocode]?.let { info ->
+            if (info.lat != null && info.lon != null) info.lat to info.lon else null
+        }
+    }
+    if (coords.size < 2) return null
+    return (1 until coords.size).sumOf { i ->
+        haversineNm(coords[i - 1].first, coords[i - 1].second, coords[i].first, coords[i].second)
+    }
+}
 
 private fun flightMapPin(
     flight: FlightStatus?,
@@ -1471,6 +1719,7 @@ private fun TimeByLocationCard(
                 segments = buildVesselTimelineSegments(
                     recentStops = vessel.recentStops,
                     vesselState = vessel.state,
+                    currentBucket = vessel.currentBucket,
                     trackedSeconds = vessel.trackedSeconds,
                     nowEpoch = nowSeconds,
                     ports = ports
@@ -1526,9 +1775,31 @@ private fun TimeByLocationStrip(
 private fun vesselBucketLabel(bucket: String, ports: Map<String, PortInfo>): String = when (bucket) {
     "UNDERWAY" -> "Underway"
     "NO_SIGNAL" -> "No signal"
+    "SIGNAL_LOST" -> "Signal lost — possibly arrived"
     "UNKNOWN_PORT" -> "Unmatched port"
     "OTHER" -> "Other ports"
     else -> ports[bucket]?.label ?: bucket
+}
+
+/**
+ * The maritime mirror of [liveFlightBucket] — see its doc comment. What the
+ * *live, right-now* edge of the vessel strip reads as, whenever there's no
+ * confirmed stop covering this exact moment. Added 2026-09-24 alongside
+ * [VesselStatus.currentBucket] itself — previously this case couldn't
+ * distinguish an ordinary short AIS gap from a confirmed SIGNAL_LOST one the
+ * way the flight side always could.
+ */
+private fun liveVesselBucket(vesselState: VesselState, currentBucket: String?): String = when {
+    vesselState == VesselState.UNDERWAY -> "UNDERWAY"
+    currentBucket == "SIGNAL_LOST" -> "SIGNAL_LOST"
+    else -> "NO_SIGNAL"
+}
+
+/** The maritime mirror of [liveFlightColor]. */
+private fun liveVesselColor(bucket: String): Color = when (bucket) {
+    "UNDERWAY" -> TT.warning
+    "SIGNAL_LOST" -> TT.critical
+    else -> TT.inkMuted
 }
 
 /**
@@ -1545,6 +1816,7 @@ private fun vesselBucketLabel(bucket: String, ports: Map<String, PortInfo>): Str
 private fun buildVesselTimelineSegments(
     recentStops: List<PortStop>,
     vesselState: VesselState,
+    currentBucket: String?,
     trackedSeconds: Long,
     nowEpoch: Long,
     ports: Map<String, PortInfo>
@@ -1568,8 +1840,10 @@ private fun buildVesselTimelineSegments(
         // only way this card renders) already guarantees it's been genuinely
         // confirmed — so reflect the live state rather than defaulting to
         // "No signal" for a vessel that's actually been tracked the entire time.
-        val bucket = if (vesselState == VesselState.UNDERWAY) "UNDERWAY" else "NO_SIGNAL"
-        val color = if (vesselState == VesselState.UNDERWAY) TT.warning else TT.inkMuted
+        // A long enough signal-loss gap still resolves to SIGNAL_LOST here
+        // too, same as the trailing-gap case below.
+        val bucket = liveVesselBucket(vesselState, currentBucket)
+        val color = liveVesselColor(bucket)
         return listOf(TimelineSegment(vesselBucketLabel(bucket, ports), windowStart, nowEpoch, color))
     }
 
@@ -1597,8 +1871,8 @@ private fun buildVesselTimelineSegments(
     }
 
     if (cursor < nowEpoch) {
-        val trailingKey = if (vesselState == VesselState.UNDERWAY) "UNDERWAY" else "NO_SIGNAL"
-        val trailingColor = if (vesselState == VesselState.UNDERWAY) TT.warning else TT.inkMuted
+        val trailingKey = liveVesselBucket(vesselState, currentBucket)
+        val trailingColor = liveVesselColor(trailingKey)
         segments += TimelineSegment(vesselBucketLabel(trailingKey, ports), cursor, nowEpoch, trailingColor)
     }
 

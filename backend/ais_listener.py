@@ -105,7 +105,7 @@ RECONNECT_BACKOFF_SECONDS = 10
 # world-sized box doesn't turn this into a firehose.
 WORLD_BOUNDING_BOX = [[[-90, -180], [90, 180]]]
 
-# Both message types apply_message() actually knows how to handle - not just
+# Every message type apply_message() actually knows how to handle - not just
 # "PositionReport". The subscription used to filter to PositionReport alone,
 # which meant aisstream.io never sent a ShipStaticData (Message 5) frame at
 # all, so the `elif msg_type == "ShipStaticData"` branch in apply_message()
@@ -113,7 +113,18 @@ WORLD_BOUNDING_BOX = [[[-90, -180], [90, 180]]]
 # from a live run - a documented feature that silently never worked because
 # the one message type it depends on was filtered out at the subscription
 # itself, not in this file's own parsing.
-SUBSCRIBED_MESSAGE_TYPES = ["PositionReport", "ShipStaticData"]
+#
+# StandardClassBPositionReport (added 2026-09-24): Message 1/2/3
+# ("PositionReport") is Class A only - the transponder category required on
+# larger commercial/SOLAS vessels and the one every superyacht on this app's
+# roster broadcasts. Smaller craft and support/chase boats (a yacht's tender,
+# a smaller sailing vessel someone tracked owns) commonly carry a cheaper
+# Class B unit instead, which reports its position as Message 18/19 -
+# "StandardClassBPositionReport" - a different MessageType string entirely.
+# Without it in this filter, any Class B vessel in holdings.json would never
+# produce a single frame, no matter how good its signal, and would silently
+# read as permanently "no signal" forever - not a coverage gap, a filter gap.
+SUBSCRIBED_MESSAGE_TYPES = ["PositionReport", "StandardClassBPositionReport", "ShipStaticData"]
 
 # Set AIS_BURST_SECONDS to run this as a one-shot burst instead of a
 # forever-running listener — see "Two ways to run it" above. 0 (unset)
@@ -164,13 +175,22 @@ def apply_message(cache: dict, raw: dict) -> bool:
     Merge one aisstream.io message into the cache. Returns True if it
     changed anything worth persisting.
 
-    Two message types matter here:
-      PositionReport   -> lat/lon/speed/course (Message 1/2/3)
-      ShipStaticData    -> the crew-entered Destination field, and the
-                           vessel's IMO number (Message 5)
+    Three message types matter here:
+      PositionReport               -> lat/lon/speed/course, Class A (Message 1/2/3)
+      StandardClassBPositionReport -> the same fields, Class B (Message 18)
+      ShipStaticData                -> the crew-entered Destination/Eta fields,
+                                       and the vessel's IMO number (Message 5)
     Everything else (and anything with an unexpected shape) is ignored
     rather than raising — a stream client should degrade quietly, not crash
     the whole listener over one odd frame.
+
+    Class A vs Class B: same Latitude/Longitude/Sog/Cog field names in both
+    (confirmed against aisstream's own published message schemas — see
+    ais-message-models on GitHub), so one branch below handles both. The one
+    real difference is NavigationalStatus: Class B transponders (cheaper,
+    carried by smaller/non-SOLAS craft) don't broadcast it at all, so it's
+    only ever read from a Class A frame - a Class B fix leaves entry["navStatus"]
+    untouched rather than overwriting a real value with a missing one.
 
     IMO number: unlike Destination (self-reported, changes every voyage),
     ShipStaticData's ImoNumber is the vessel's permanent hull identifier —
@@ -180,6 +200,15 @@ def apply_message(cache: dict, raw: dict) -> bool:
     yet. aisstream.io returns 0 for vessels with no assigned IMO (common
     for smaller/non-SOLAS craft, which some tracked yachts are) — that's
     not a real identifier, so it's dropped rather than cached as "0".
+
+    Eta: crew-entered, same self-reported/unverified caveat as Destination,
+    and paired with it — an ETA with no destination is meaningless. AIS
+    encodes "not available" as Month/Day == 0 (and Hour == 24 / Minute == 60
+    for the time-of-day part specifically) per ITU-R M.1371, not as a null
+    field, so those sentinels are checked for and dropped here rather than
+    cached as a fake December-31-at-midnight-style date. snapshot_worker.py
+    turns whatever survives into a display string (see format_ais_eta) —
+    this file only ever stores the raw broadcast fields.
     """
     msg_type = raw.get("MessageType")
     meta = raw.get("MetaData") or {}
@@ -214,6 +243,23 @@ def apply_message(cache: dict, raw: dict) -> bool:
         entry["timestamp"] = int(time.time())
         changed = True
 
+    elif msg_type == "StandardClassBPositionReport":
+        # Same position/speed/course fields as Class A's PositionReport, just
+        # a different transponder category (see the docstring above) - no
+        # NavigationalStatus field exists on this message type at all, so
+        # entry["navStatus"] is deliberately left alone rather than set to
+        # None here, in case a vessel's Class A history already has one.
+        body = (raw.get("Message") or {}).get("StandardClassBPositionReport") or {}
+        lat, lon = body.get("Latitude"), body.get("Longitude")
+        if lat is None or lon is None:
+            return False
+        entry["lat"] = lat
+        entry["lon"] = lon
+        entry["sog"] = body.get("Sog")
+        entry["cog"] = body.get("Cog")
+        entry["timestamp"] = int(time.time())
+        changed = True
+
     elif msg_type == "ShipStaticData":
         body = (raw.get("Message") or {}).get("ShipStaticData") or {}
         dest = body.get("Destination")
@@ -228,6 +274,26 @@ def apply_message(cache: dict, raw: dict) -> bool:
         if isinstance(imo, int) and imo > 0:
             entry["imo"] = str(imo)
             changed = True
+
+        eta = body.get("Eta")
+        if isinstance(eta, dict):
+            month, day = eta.get("Month"), eta.get("Day")
+            # Month/Day == 0 is AIS's "not available" sentinel (ITU-R
+            # M.1371) - the crew never entered one, not a real December 31st
+            # sitting under a truthy `if eta`. Hour == 24 / Minute == 60 are
+            # the same "not available" convention for the time-of-day part
+            # specifically, so those two are kept nullable independent of
+            # whether a real date came through.
+            if isinstance(month, int) and isinstance(day, int) and month > 0 and day > 0:
+                hour = eta.get("Hour")
+                minute = eta.get("Minute")
+                entry["eta"] = {
+                    "month": month,
+                    "day": day,
+                    "hour": hour if isinstance(hour, int) and hour < 24 else None,
+                    "minute": minute if isinstance(minute, int) and minute < 60 else None,
+                }
+                changed = True
 
     return changed
 

@@ -1,0 +1,84 @@
+name: Refresh AIS cache
+
+on:
+  schedule:
+    - cron: "*/5 * * * *"
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+concurrency:
+  group: ais-refresh
+  cancel-in-progress: false
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install websockets
+        run: pip install websockets
+
+      - name: Burst-listen for AIS updates
+        env:
+          AISSTREAM_API_KEY: ${{ secrets.AISSTREAM_API_KEY }}
+          AIS_BURST_SECONDS: "270"
+        run: |
+          if [ -z "$AISSTREAM_API_KEY" ]; then
+            echo "AISSTREAM_API_KEY repo secret not set — skipping this run." \
+                 "Get a free key at https://aisstream.io/authenticate and add it" \
+                 "under Settings -> Secrets and variables -> Actions."
+            exit 0
+          fi
+          python3 backend/ais_listener.py
+
+      - name: Commit updated AIS cache
+        run: |
+          git config user.name "ais-bot"
+          git config user.email "actions@users.noreply.github.com"
+          # ais_listener.py only writes backend/ais_cache.json when a tracked
+          # vessel's message actually arrives during the burst window — a
+          # quiet burst (no AIS traffic heard for any tracked MMSI in the
+          # listening window, which is normal and expected, not an error)
+          # means the file never gets created at all. `git add` on a
+          # nonexistent path fails the whole job, so check first and treat
+          # "nothing heard" as the ordinary no-op it is, same as an unpriced ticker just gets
+          # skipped in snapshot_worker.py rather than failing that job.
+          if [ ! -f backend/ais_cache.json ]; then
+            echo "No AIS traffic heard for any tracked vessel this burst — nothing to commit."
+            exit 0
+          fi
+          git add backend/ais_cache.json
+          if git diff --cached --quiet; then
+            echo "nothing changed, skipping commit"
+            exit 0
+          fi
+          git commit -m "Refresh AIS cache ($(date -u +%Y-%m-%dT%H:%M:%SZ))"
+
+          # This job and snapshot.yml both run on the same 5-minute cron and
+          # both push straight to main. concurrency: only serializes runs of
+          # THIS workflow against each other — it does nothing for a push
+          # landing on main from the other workflow at the same moment, which
+          # is exactly the "! [rejected] main -> main (fetch first)" failure
+          # this was written to fix. Rebasing this one commit onto whatever
+          # just landed and retrying the push turns that race into a self-
+          # healing no-op instead of a failed run, since the two workflows
+          # never touch the same files (this one only ever writes
+          # backend/ais_cache.json), so the rebase itself can't conflict.
+          for attempt in 1 2 3 4 5; do
+            if git push; then
+              exit 0
+            fi
+            echo "push rejected (attempt $attempt/5) — another workflow committed first, rebasing onto origin/main and retrying"
+            git fetch origin main
+            if ! git rebase origin/main; then
+              echo "rebase hit a real conflict — bailing out rather than pushing something broken; next scheduled run will pick this up"
+              git rebase --abort
+              exit 1
+            fi
+            sleep $((RANDOM % 5 + 1))
+          done
+          echo "push still rejected after 5 retries — giving up this run; next scheduled run will retry"
+          exit 1

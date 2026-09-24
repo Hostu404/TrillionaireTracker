@@ -1,0 +1,94 @@
+name: Refresh snapshot
+
+# Runs backend/snapshot_worker.py on a schedule and publishes its output as
+# docs/snapshot.json, which GitHub Pages serves as a free static CDN — see
+# backend/README's "Backend" section for what the worker itself does and
+# why it needs no API keys. This is the piece that turns the app from
+# "accurate as of whenever it was last built" into "accurate as of five
+# minutes ago, indefinitely" — see the app's own Config.kt for the client
+# side of this (SNAPSHOT_URL just has to point at this workflow's output).
+#
+# Every 5 minutes rather than the worker's own 1-minute design cadence:
+# GitHub's scheduled-workflow cron is best-effort and can be delayed under
+# load, so a 1-minute schedule wouldn't reliably fire every minute anyway.
+# 5 minutes is the realistic floor, and the client's own polling (60s) just
+# means it re-reads the same file a few times between real updates — no
+# different, functionally, from any CDN-cached value.
+on:
+  schedule:
+    - cron: "*/5 * * * *"
+  workflow_dispatch: {} # lets you trigger a run by hand from the Actions tab
+
+permissions:
+  contents: write # needed to commit state.json/snapshot.json back
+
+concurrency:
+  group: snapshot-refresh
+  cancel-in-progress: false # let a run finish rather than racing its own commit
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # OurAirports' airports.csv turns bare ICAO codes into friendly
+      # "City, ST" labels and gives the map real coordinates to drop pins
+      # at — see backend/README's Backend section. Fetched once and
+      # committed, not re-fetched every run: airport identities/coordinates
+      # essentially never change, so there's no reason to make this a live
+      # dependency of every single pass.
+      - name: Fetch airports.csv (first run only)
+        run: |
+          if [ ! -f backend/airports.csv ]; then
+            echo "airports.csv missing — downloading OurAirports' public export"
+            curl -fsSL "https://davidmegginson.github.io/ourairports-data/airports.csv" -o backend/airports.csv
+          else
+            echo "airports.csv already present, skipping download"
+          fi
+
+      - name: Run snapshot_worker.py
+        run: python3 backend/snapshot_worker.py
+
+      - name: Publish to docs/ (what GitHub Pages serves)
+        run: |
+          mkdir -p docs
+          cp backend/snapshot.json docs/snapshot.json
+
+      - name: Commit updated state + published snapshot
+        run: |
+          git config user.name "snapshot-bot"
+          git config user.email "actions@users.noreply.github.com"
+          git add backend/state.json backend/airports.csv docs/snapshot.json
+          if git diff --cached --quiet; then
+            echo "nothing changed, skipping commit"
+            exit 0
+          fi
+          git commit -m "Refresh snapshot ($(date -u +%Y-%m-%dT%H:%M:%SZ))"
+
+          # This job and ais.yml both run on the same 5-minute cron and both
+          # push straight to main. concurrency: only serializes runs of THIS
+          # workflow against each other — it does nothing for a push landing
+          # on main from the other workflow at the same moment, which is
+          # exactly the "! [rejected] main -> main (fetch first)" failure
+          # ais.yml hit. Rebasing this one commit onto whatever just landed
+          # and retrying the push turns that race into a self-healing no-op
+          # instead of a failed run, since the two workflows never touch the
+          # same files (this one only ever writes backend/state.json,
+          # backend/airports.csv, docs/snapshot.json), so the rebase itself
+          # can't conflict.
+          for attempt in 1 2 3 4 5; do
+            if git push; then
+              exit 0
+            fi
+            echo "push rejected (attempt $attempt/5) — another workflow committed first, rebasing onto origin/main and retrying"
+            git fetch origin main
+            if ! git rebase origin/main; then
+              echo "rebase hit a real conflict — bailing out rather than pushing something broken; next scheduled run will pick this up"
+              git rebase --abort
+              exit 1
+            fi
+            sleep $((RANDOM % 5 + 1))
+          done
+          echo "push still rejected after 5 retries — giving up this run; next scheduled run will retry"
+          exit 1
