@@ -688,7 +688,7 @@ def _fetch_readsb_style(url: str, icao_hex: str, source_label: str) -> dict | No
     return None
 
 
-def _fetch_by_registration(tail: str, source_label: str, base_url: str) -> dict | None:
+def _fetch_by_registration(tail: str, source_label: str, base_url: str, reg_segment: str = "reg") -> dict | None:
     """
     Registration/tail-number fallback, tried only when every hex-keyed
     source above came up empty for this pass and this subject has a known
@@ -702,12 +702,20 @@ def _fetch_by_registration(tail: str, source_label: str, base_url: str) -> dict 
 
     Unlike `_fetch_readsb_style`, no client-side re-matching against a
     returned field is needed: the endpoint itself is scoped to this one
-    registration (`/v2/reg/{tail}`, same `{"ac": [...]}` shape as the hex
-    endpoints on both adsb.lol and adsb.fi), so whatever comes back in
-    `ac[0]` — if anything — is already the right aircraft.
+    registration, same `{"ac": [...]}` shape as the hex endpoints — so
+    whatever comes back in `ac[0]` — if anything — is already the right
+    aircraft.
+
+    `reg_segment` exists because adsb.lol (a readsb-api fork, like
+    airplanes.live/ADS-B One) and adsb.fi (its own independent
+    implementation) don't actually agree on this path: adsb.lol's is
+    `/v2/reg/{tail}`, but adsb.fi's is `/v2/registration/{tail}` — calling
+    adsb.fi with `/v2/reg/` 400s outright rather than just coming up empty,
+    which is what tipped this off (both APIs' hex endpoints do agree, at
+    `/v2/hex/`).
     """
     try:
-        data = get_json(f"{base_url}/v2/reg/{urllib.parse.quote(tail)}")
+        data = get_json(f"{base_url}/v2/{reg_segment}/{urllib.parse.quote(tail)}")
     except Exception as exc:                      # noqa: BLE001
         print(f"[{source_label}] reg={tail}: {exc}", file=sys.stderr)
         return None
@@ -794,7 +802,7 @@ def fetch_aircraft(icao_hex: str, tail: str | None = None) -> dict | None:
         if ac is not None:
             return ac
 
-        ac = _fetch_by_registration(tail, "adsbfi-reg", "https://opendata.adsb.fi/api")
+        ac = _fetch_by_registration(tail, "adsbfi-reg", "https://opendata.adsb.fi/api", reg_segment="registration")
         if ac is not None:
             return ac
 
