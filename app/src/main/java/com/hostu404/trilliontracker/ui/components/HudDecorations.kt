@@ -1,21 +1,30 @@
 package com.hostu404.trilliontracker.ui.components
 
+import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.VectorConverter
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.offset
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.composed
@@ -37,12 +46,20 @@ import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.clipRect
 import androidx.compose.ui.graphics.drawscope.translate
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.pointer.positionChange
+import androidx.compose.ui.layout.layout
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import com.hostu404.trilliontracker.ui.theme.TT
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import kotlin.math.abs
 import kotlin.math.cos
+import kotlin.math.roundToInt
 import kotlin.math.sin
 import kotlin.math.sqrt
 
@@ -172,49 +189,81 @@ fun Modifier.chromaticAberration(shift: Dp = 0.9.dp): Modifier = composed {
 }
 
 /**
+ * A photo grade for [com.hostu404.trilliontracker.ui.screens.PersonDetailScreen]'s
+ * hero portrait — the "universal filter" that makes a real, naturally-lit
+ * photograph read as part of this HUD's own palette instead of a plain
+ * photo with an effect glued on top of it. Two passes folded into one
+ * matrix: desaturate toward 40% (a real photo's natural hues otherwise
+ * clash hard against the app's near-monochrome cyan-on-black system), then
+ * push the remaining color toward that system specifically — red pulled
+ * back, blue pushed up, everything darkened a touch and lifted slightly out
+ * of true black on the green/blue channels only, landing close to
+ * [TT.surface]'s own near-black teal rather than a neutral gray-black.
+ *
+ * Deliberately a plain affine [ColorMatrix], not a shader/[RenderEffect] —
+ * same reasoning as [chromaticAberration]'s doc comment (minSdk 26, no
+ * pre-31 fallback to maintain). A true duotone (mapping shadows and
+ * highlights to two fixed colors) needs a lookup curve a 4x5 matrix can't
+ * express; this is the matrix-only approximation of that idea — a
+ * consistent color cast, not a literal two-color remap — which is enough to
+ * make the photo feel like it belongs to the same system.
+ *
+ * Applied via [coil.compose.AsyncImage]'s own `colorFilter` parameter (baked
+ * into the photo's own draw call), with [sickeningChromaticAberration]
+ * layered on as a `Modifier` on top of that — so the aberration effect's
+ * three re-draws pick up the already-graded pixels, not the raw photo.
+ */
+val hudPhotoGradeFilter: ColorFilter = ColorFilter.colorMatrix(
+    ColorMatrix(
+        floatArrayOf(
+            0.3248f, 0.3091f, 0.0311f, 0f, 0f,
+            0.1315f, 0.7740f, 0.0445f, 0f, 4f,
+            0.1644f, 0.5519f, 0.4713f, 0f, 8f,
+            0f, 0f, 0f, 1f, 0f
+        )
+    )
+)
+
+/**
  * The portrait-specific escalation of [chromaticAberration] — reserved for
  * [com.hostu404.trilliontracker.ui.screens.PersonDetailScreen]'s
  * [PersonHeader] photo, deliberately meant to feel a bit wrong to look at
- * rather than merely "glassy." Two things make it read as sickly instead of
- * stylish: the shift is much wider than the base effect, and it never sits
- * still — it steps between a resting and a peak width on an irregular beat
- * (no easing, no clean sine), so the fringing pulses like a bad signal
- * rather than settling into a fixed, ignorable frame. A small vertical creep
- * on top of the usual horizontal split (an eighth of the horizontal shift,
- * opposite sign each side) breaks the left/right symmetry a plain
- * double-exposure would have, which is what pushes it from "stylized" toward
- * "off." Every other chromatic-aberration use in the app stays on the calm,
- * static default — this one is deliberate main-character treatment for the
- * person the app is needling.
+ * rather than merely "glassy." Calmed down 2026-09-24, alongside adding
+ * [hudPhotoGradeFilter], in response to the combination reading as too
+ * jarring/out-of-place against the rest of the HUD: the shift range is
+ * roughly halved, the vertical creep that used to break left/right symmetry
+ * (the thing that pushed it from "stylized" toward actively "off") is
+ * removed entirely, and the beat is slower — fewer, gentler jumps rather
+ * than a constant erratic pulse. It still never sits perfectly still (that
+ * residual motion is what's left of the original "main-character treatment"
+ * for whoever's profile is open), but it now reads as a HUD glitch flicker
+ * rather than a bad signal. Every other chromatic-aberration use in the app
+ * stays on the calm, fully static default ([chromaticAberration]).
  *
  * **Stepped, not smoothly interpolated.** [drawWithContent] here does three
  * full-photo [Canvas.saveLayer] passes (one per color channel) every time
  * this recomposes — real, non-trivial GPU/compositing cost, and continuous
- * for as long as this screen is open. The original version drove [shiftPx]
- * with [animateFloat], which recomposes on every animation frame (up to
- * 60/sec) to interpolate smoothly between keyframes — i.e. up to 180
- * full-photo redraws a second just for this one effect. This version instead
- * snaps directly between the same keyframe values on a plain timed loop
- * (~8 steps/sec), cutting the redraw rate roughly 7-8x for the same shift
- * range and beat pattern — and the harder jump-cut between values, if
- * anything, reads slightly more "glitchy" than a buttery interpolation
- * would, not less.
+ * for as long as this screen is open. Driving [shiftPx] with [animateFloat]
+ * instead would recompose on every animation frame (up to 60/sec) to
+ * interpolate smoothly between keyframes — i.e. up to 180 full-photo
+ * redraws a second just for this one effect. This snaps directly between
+ * keyframe values on a plain timed loop (~8 steps/sec) instead, cutting the
+ * redraw rate roughly 7-8x for the same beat pattern.
  */
 fun Modifier.sickeningChromaticAberration(
-    baseShift: Dp = 2.4.dp,
-    peakShift: Dp = 5.6.dp
+    baseShift: Dp = 1.1.dp,
+    peakShift: Dp = 2.4.dp
 ): Modifier = composed {
     val basePx = with(LocalDensity.current) { baseShift.toPx() }
     val peakPx = with(LocalDensity.current) { peakShift.toPx() }
 
-    // The exact same (value, time) beat as before, just stepped through
-    // directly instead of handed to animateFloat for smooth interpolation —
-    // see the doc comment above for why.
+    // Same stepped-keyframe shape as before, just fewer/gentler jumps and a
+    // slower cycle (4.4s vs. the original 2.9s) — see the doc comment above.
     val keyframeValues = remember(basePx, peakPx) {
-        listOf(basePx, peakPx, basePx * 0.55f, peakPx * 0.8f, basePx, peakPx, basePx * 0.4f, peakPx * 0.65f, basePx)
+        listOf(basePx, peakPx * 0.75f, basePx, peakPx, basePx * 0.6f, basePx)
     }
-    val keyframeTimesMs = listOf(0, 260, 620, 900, 1250, 1650, 1950, 2300, 2900)
-    val stepMs = 120L
+    val keyframeTimesMs = listOf(0, 500, 1200, 2400, 3200, 4400)
+    val stepMs = 160L
 
     var shiftPx by remember { mutableFloatStateOf(basePx) }
     LaunchedEffect(keyframeValues) {
@@ -238,9 +287,12 @@ fun Modifier.sickeningChromaticAberration(
         val canvas = drawContext.canvas
         paint.blendMode = BlendMode.Plus
 
+        // Plain horizontal split now, same as the calm default — the
+        // vertical creep this used to add is exactly the asymmetry the doc
+        // comment above says was removed.
         paint.colorFilter = redChannelFilter
         canvas.saveLayer(bounds, paint)
-        translate(left = -shiftPx, top = shiftPx * 0.14f) { contentScope.drawContent() }
+        translate(left = -shiftPx) { contentScope.drawContent() }
         canvas.restore()
 
         paint.colorFilter = greenChannelFilter
@@ -250,9 +302,219 @@ fun Modifier.sickeningChromaticAberration(
 
         paint.colorFilter = blueChannelFilter
         canvas.saveLayer(bounds, paint)
-        translate(left = shiftPx, top = -shiftPx * 0.14f) { contentScope.drawContent() }
+        translate(left = shiftPx) { contentScope.drawContent() }
         canvas.restore()
     }
+}
+
+/**
+ * Measures whatever this wraps against a box [margin] bigger on every side
+ * than what this node actually reports upward to its own parent — the
+ * parent's layout is completely unaffected (this still occupies exactly the
+ * space it always did), but the content drawn inside now genuinely extends
+ * [margin] past that space in every direction, centred, with the overflow
+ * just sitting outside this node's own reported bounds.
+ *
+ * Built specifically to pair with [rubberBandPhotoDrag] on the profile
+ * photo, fixing a real reported bug: [ContentScale.Crop] alone sizes a
+ * photo to *exactly* cover its frame with no spare pixels left over, so
+ * panning a Crop-fit image with a plain offset just slides that whole
+ * already-cropped rectangle sideways — which shows bare background on
+ * whichever side it pulled away from, not more of the photo. Measuring the
+ * photo against a quietly larger box instead means Crop scales up to cover
+ * *that* larger box, so there are always genuine extra pixels of the
+ * original photo sitting just past the visible frame — pulling now reveals
+ * more of the actual image within [margin], never empty space (the frame's
+ * own [Modifier.clip] still hides that extra margin at rest, exactly like
+ * it hides anything else drawn outside the frame).
+ *
+ * The one real tradeoff, worth naming plainly: the photo reads very
+ * slightly more zoomed-in at rest than an edge-to-edge Crop fit would,
+ * since it's now scaled to cover a box bigger than the one it's actually
+ * shown in. [rubberBandPhotoDrag] calls this with a margin a fixed 8dp
+ * bigger than its own `maxPull` — comfortable buffer, not an exact
+ * match — which keeps that cost close to invisible at rest; it's the
+ * deliberate small compromise this pairing is built around, not a side
+ * effect to hide. Private and only ever called from there for exactly that
+ * reason: the margin only makes sense in terms of a `maxPull` it doesn't
+ * have its own opinion about, so it's not exposed as a general knob.
+ *
+ * Assumes bounded incoming constraints (true at its one call site, a fixed-
+ * size photo frame) — reporting [Constraints.Infinity] back up as this
+ * node's own size would be invalid, so this isn't written as a
+ * general-purpose "grow anything" utility.
+ */
+private fun Modifier.overscanBy(margin: Dp): Modifier = composed {
+    val marginPx = with(LocalDensity.current) { margin.roundToPx() }
+    layout { measurable, constraints ->
+        val grown = Constraints(
+            minWidth = (constraints.minWidth + marginPx * 2).coerceAtLeast(0),
+            minHeight = (constraints.minHeight + marginPx * 2).coerceAtLeast(0),
+            maxWidth = if (constraints.hasBoundedWidth) constraints.maxWidth + marginPx * 2 else constraints.maxWidth,
+            maxHeight = if (constraints.hasBoundedHeight) constraints.maxHeight + marginPx * 2 else constraints.maxHeight
+        )
+        val placeable = measurable.measure(grown)
+        layout(constraints.maxWidth, constraints.maxHeight) {
+            placeable.place(-marginPx, -marginPx)
+        }
+    }
+}
+
+/**
+ * The profile photo's one physical-feeling interaction: drag it and it
+ * pulls along with the finger inside its own frame; let go and it snaps
+ * back to centre with an overshooting spring — a rubber band, not a real
+ * repositioning tool. Nothing about a pull is ever kept — every gesture,
+ * however it ends, resets to [Offset.Zero] the moment contact breaks.
+ *
+ * Two separate things keep this from firing during ordinary use of the rest
+ * of the screen, per the brief this was built to ("restrained... shouldn't
+ * accidentally activate"):
+ *
+ *  - Nothing about this — not even [dragging] — engages until the finger has
+ *    travelled [activationSlop] from where it first touched down, tracked by
+ *    hand in the gesture loop below rather than through
+ *    `detectDragGestures`'s own built-in slop handling (used here in an
+ *    earlier pass). That built-in slop is the platform's default touch-slop
+ *    constant (~18dp), tuned to separate a deliberate drag from an
+ *    incidental tap — a sound threshold in general, but a real reported
+ *    problem here specifically: a normal
+ *    scroll swipe that happens to start on top of this particular photo
+ *    could cross that default distance before the scroll gesture above it
+ *    ever got a chance to claim the touch, snatching an ordinary scroll into
+ *    an accidental pull. [activationSlop] is deliberately well past that
+ *    default for exactly that reason, and — critically — every event before
+ *    it's crossed is left completely unconsumed, so a normal scroll starting
+ *    on the photo is never even briefly intercepted; only a drag that
+ *    commits to moving a real distance takes over from here.
+ *  - Once a drag *does* commit, [rubberBandPull] compresses the raw finger
+ *    travel into a small, hard-capped range ([maxPull]) on a
+ *    diminishing-returns curve — pulling further and further makes less and
+ *    less difference, the same "give" a real rubber band has near the end
+ *    of its stretch, rather than the photo sliding wherever the finger
+ *    actually goes. This is the visual half of "restrained"; the slop
+ *    threshold above is the activation half.
+ *
+ * Live drag position is tracked as plain [mutableStateOf] — cheap,
+ * synchronous, no coroutine per pointer-move event — and [springBack] (an
+ * [Animatable]) only ever gets engaged once, at release, for the flick back
+ * to zero. Reusing the drag [Animatable] for the live-drag phase too would
+ * mean firing a `snapTo` coroutine on every single pointer-move callback for
+ * as long as the finger is down, which is needless coroutine churn for a
+ * value this modifier can just read directly instead.
+ *
+ * The resulting offset is applied with a plain lambda [Modifier.offset] —
+ * this never has to reason about the photo's own frame edges itself,
+ * whatever it produces just gets cropped by that frame's existing
+ * [Modifier.clip] like any other overflow would be.
+ *
+ * Applies [overscanBy] to itself first, with a margin comfortably bigger
+ * than [maxPull] — a real reported bug, fixed by pairing the two: without
+ * spare pixels to pull into, dragging a plain [ContentScale.Crop] photo (no
+ * slack left once it's scaled to exactly cover its frame) just slides the
+ * whole already-cropped rectangle sideways, showing bare background on
+ * whichever side it pulled away from instead of more of the photo. Folded
+ * in here rather than left as a separate call a caller could forget to
+ * chain alongside this one — see [overscanBy]'s own doc comment for the
+ * (small, deliberate) tradeoff that fix costs.
+ */
+fun Modifier.rubberBandPhotoDrag(maxPull: Dp = 16.dp, activationSlop: Dp = 32.dp): Modifier = composed {
+    val maxPullPx = with(LocalDensity.current) { maxPull.toPx() }
+    val slopPx = with(LocalDensity.current) { activationSlop.toPx() }
+    var rawDrag by remember { mutableStateOf(Offset.Zero) }
+    var dragging by remember { mutableStateOf(false) }
+    val springBack = remember { Animatable(Offset.Zero, Offset.VectorConverter) }
+    val scope = rememberCoroutineScope()
+    val overscanMargin = maxPull + 8.dp
+
+    fun flickBack(from: Offset) {
+        scope.launch {
+            springBack.snapTo(from)
+            springBack.animateTo(
+                targetValue = Offset.Zero,
+                animationSpec = spring(
+                    dampingRatio = Spring.DampingRatioMediumBouncy,
+                    stiffness = Spring.StiffnessMedium
+                )
+            )
+        }
+    }
+
+    val liveOffset = if (dragging) rubberBandPull(rawDrag, maxPullPx) else springBack.value
+
+    this
+        .overscanBy(overscanMargin)
+        .pointerInput(maxPullPx, slopPx) {
+            awaitEachGesture {
+                val down = awaitFirstDown(requireUnconsumed = false)
+                val pointerId = down.id
+                // Distance travelled since the finger went down, tallied
+                // separately from [rawDrag] — this one only exists to decide
+                // *whether* the gesture commits at all, and its own total
+                // (including the slop distance itself) is deliberately
+                // thrown away once it does, so the photo doesn't jump by
+                // [activationSlop] the instant it engages — see rawDrag's
+                // reset below.
+                var sinceDown = Offset.Zero
+                var committed = false
+                try {
+                    while (true) {
+                        val event = awaitPointerEvent()
+                        val change = event.changes.firstOrNull { it.id == pointerId } ?: break
+                        if (!change.pressed) {
+                            if (committed) change.consume()
+                            break
+                        }
+                        val delta = change.positionChange()
+                        if (!committed) {
+                            sinceDown += delta
+                            if (sinceDown.getDistance() > slopPx) {
+                                committed = true
+                                dragging = true
+                                rawDrag = Offset.Zero
+                                change.consume()
+                            }
+                            // Not committed yet: leave the event untouched.
+                            // A normal scroll gesture that happens to have
+                            // started on this photo is still free to claim
+                            // it — see this function's own doc comment.
+                        } else {
+                            change.consume()
+                            rawDrag += delta
+                        }
+                    }
+                } finally {
+                    // Covers a clean release AND any other way this gesture
+                    // ends (the pointerInput coroutine getting cancelled by
+                    // a recomposition, say) with the same one flick-back —
+                    // no separate cancel-vs-end branch needed, since both
+                    // mean the same thing here: whatever pull exists right
+                    // now should spring back to zero.
+                    if (committed) {
+                        dragging = false
+                        flickBack(rubberBandPull(rawDrag, maxPullPx))
+                    }
+                }
+            }
+        }
+        .offset { IntOffset(liveOffset.x.roundToInt(), liveOffset.y.roundToInt()) }
+}
+
+/**
+ * Diminishing-returns pull curve, applied per axis: approaches [maxPullPx]
+ * asymptotically but never reaches or crosses it no matter how far [raw]
+ * actually travels — the "restrained" half of [rubberBandPhotoDrag]'s
+ * rubber-band feel; that function's spring-back on release is the other
+ * half.
+ */
+private fun rubberBandPull(raw: Offset, maxPullPx: Float): Offset {
+    fun axis(delta: Float): Float {
+        if (maxPullPx <= 0f) return 0f
+        val mag = abs(delta)
+        val pulled = maxPullPx * (mag / (mag + maxPullPx))
+        return if (delta < 0f) -pulled else pulled
+    }
+    return Offset(axis(raw.x), axis(raw.y))
 }
 
 /**

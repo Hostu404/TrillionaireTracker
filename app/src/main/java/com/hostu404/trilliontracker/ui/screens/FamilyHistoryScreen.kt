@@ -21,7 +21,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.text.font.FontWeight
@@ -86,8 +85,23 @@ fun FamilyHistoryScreen(
             item {
                 BackRow(onBack = onBack)
                 Spacer(Modifier.height(10.dp))
+                // Same eyebrow-label + title shape as PersonDetailScreen's
+                // "[ SUBJECT ]" header (added 2026-09-24, same pass) — the
+                // bracket/monospace/letter-spaced chrome for the label, the
+                // person's actual name left in the normal readable font
+                // rather than monospace, same "a label is UI chrome, a name
+                // is not" rule that header follows.
                 Text(
-                    text = "$personName · Family History",
+                    text = "[ FAMILY HISTORY ]",
+                    color = TT.accentCyan,
+                    fontSize = 10.sp,
+                    fontFamily = TT.monoNumeric,
+                    fontWeight = FontWeight.SemiBold,
+                    letterSpacing = 2.sp
+                )
+                Spacer(Modifier.height(2.dp))
+                Text(
+                    text = personName,
                     color = TT.inkPrimary,
                     fontSize = 20.sp,
                     fontWeight = FontWeight.SemiBold
@@ -116,29 +130,35 @@ fun FamilyHistoryScreen(
     }
 }
 
+/**
+ * This screen's original back-button chip: a plain raised-surface panel
+ * (10dp cut, "← Back" text at 13sp Medium, no shadow) sitting directly on
+ * the screen's own dark background. Briefly changed on 2026-09-24 to match
+ * PersonDetailScreen's photo-overlay button (14dp cut, icon-only "←", drop
+ * shadow) in the name of coherence, then reverted the same day — this
+ * simpler chip was the one worth keeping, so PersonDetailScreen's button
+ * now matches THIS shape and content instead (see that button's own doc
+ * comment). No shadow/glow here because there's no photo underneath this
+ * one competing for contrast the way there is over there.
+ */
 @Composable
 private fun BackRow(onBack: () -> Unit) {
+    val shape = TT.panelShape(10.dp)
     Row(verticalAlignment = Alignment.CenterVertically) {
         Box(
             modifier = Modifier
-                // shadow has to sit before this Box's own .clip() below —
-                // clip cuts off anything drawn after it in the chain,
-                // elevation shadow included, so it goes here rather than
-                // through hudTouchable's own (equivalent, but too late for
-                // this particular chain) elevation param.
-                .shadow(
-                    elevation = 1.5.dp,
-                    shape = TT.panelShape(10.dp),
-                    ambientColor = TT.accentCyan.copy(alpha = 0.55f),
-                    spotColor = TT.accentCyan.copy(alpha = 0.55f)
-                )
-                .clip(TT.panelShape(10.dp))
+                .clip(shape)
                 .background(TT.surfaceRaised)
-                .border(1.dp, TT.borderBright, TT.panelShape(10.dp))
+                .border(1.dp, TT.border, shape)
                 .hudTouchable(cornerLength = 6.dp, cornerInset = 2.dp, onClick = onBack)
                 .padding(horizontal = 14.dp, vertical = 8.dp)
         ) {
-            Text(text = "← Back", color = TT.accentCyan, fontSize = 13.sp, fontWeight = FontWeight.Medium)
+            Text(
+                text = "← Back",
+                color = TT.accentCyan,
+                fontSize = 13.sp,
+                fontWeight = FontWeight.Medium
+            )
         }
     }
 }
@@ -155,8 +175,30 @@ private fun RiverConnector() {
     )
 }
 
+/**
+ * Every 4-digit year literally appearing in this generation's members'
+ * [FamilyMember.years] strings — not an inference about when the
+ * generation "was," just the raw years already present in already-sourced
+ * text (a birth year, a birth-death span, whatever's on record for
+ * whoever's named). Deliberately not interpreted into a claimed era: years
+ * comes from free text like "b. c. 1946" or "1948–2024", entered per
+ * source in whatever form the source itself uses, so this only ever
+ * surfaces exact values already there, never fills gaps between them.
+ */
+private val yearPattern = Regex("""\b(1[6-9]\d{2}|20\d{2})\b""")
+
+private fun yearsOnRecord(generation: FamilyGeneration): Pair<Int, Int>? {
+    val years = generation.members.flatMap { member ->
+        member.years?.let { yearPattern.findAll(it).map { m -> m.value.toInt() }.toList() } ?: emptyList()
+    }
+    if (years.isEmpty()) return null
+    return years.min() to years.max()
+}
+
 @Composable
 private fun GenerationCard(generation: FamilyGeneration) {
+    val range = yearsOnRecord(generation)
+
     Column(
         Modifier
             .fillMaxWidth()
@@ -170,13 +212,30 @@ private fun GenerationCard(generation: FamilyGeneration) {
                 text = "[ ${generation.label.uppercase()} ]",
                 color = TT.accentCyan,
                 fontSize = 11.sp,
+                fontFamily = TT.monoNumeric,
                 fontWeight = FontWeight.SemiBold,
                 letterSpacing = 1.5.sp
             )
+            if (range != null) {
+                Spacer(Modifier.width(8.dp))
+                Text(
+                    text = if (range.first == range.second) "${range.first}" else "${range.first}–${range.second}",
+                    color = TT.inkMuted,
+                    fontSize = 11.sp,
+                    fontFamily = TT.monoNumeric,
+                    letterSpacing = 0.5.sp
+                )
+            }
         }
         generation.region?.let { region ->
             Spacer(Modifier.height(4.dp))
-            Text(text = region, color = TT.inkMuted, fontSize = 12.sp)
+            Text(
+                text = region.uppercase(),
+                color = TT.inkMuted,
+                fontSize = 11.sp,
+                fontFamily = TT.monoNumeric,
+                letterSpacing = 0.8.sp
+            )
         }
 
         Spacer(Modifier.height(10.dp))
@@ -230,6 +289,7 @@ private fun WorldSnapshotBlock(snapshot: WorldSnapshot) {
         text = "THE WIDER PICTURE",
         color = TT.inkMuted,
         fontSize = 10.sp,
+        fontFamily = TT.monoNumeric,
         fontWeight = FontWeight.SemiBold,
         letterSpacing = 1.2.sp
     )
@@ -258,7 +318,13 @@ private fun MemberBlock(member: FamilyMember) {
         }
         member.years?.let { years ->
             Spacer(Modifier.height(2.dp))
-            Text(text = years, color = TT.inkMuted, fontSize = 11.sp)
+            Text(
+                text = years,
+                color = TT.inkMuted,
+                fontSize = 11.sp,
+                fontFamily = TT.monoNumeric,
+                letterSpacing = 0.3.sp
+            )
         }
         if (member.facts.isNotEmpty()) {
             Spacer(Modifier.height(8.dp))
@@ -278,9 +344,11 @@ private fun MemberBlock(member: FamilyMember) {
         }
         Spacer(Modifier.height(6.dp))
         Text(
-            text = member.sourceLabel + " ↗",
+            text = "[ ${member.sourceLabel.uppercase()} ↗ ]",
             color = TT.accentCyan,
             fontSize = 10.sp,
+            fontFamily = TT.monoNumeric,
+            letterSpacing = 0.4.sp,
             modifier = Modifier
                 .padding(2.dp)
                 .clickable { uriHandler.openUri(member.sourceUrl) }
@@ -305,6 +373,7 @@ private fun SourcedNoteBlock(label: String, note: SourcedNote) {
             text = label,
             color = TT.accentYellow,
             fontSize = 10.sp,
+            fontFamily = TT.monoNumeric,
             fontWeight = FontWeight.SemiBold,
             letterSpacing = 1.2.sp
         )
@@ -317,9 +386,11 @@ private fun SourcedNoteBlock(label: String, note: SourcedNote) {
         )
         Spacer(Modifier.height(6.dp))
         Text(
-            text = note.sourceLabel + " ↗",
+            text = "[ ${note.sourceLabel.uppercase()} ↗ ]",
             color = TT.accentCyan,
             fontSize = 10.sp,
+            fontFamily = TT.monoNumeric,
+            letterSpacing = 0.4.sp,
             modifier = Modifier
                 .padding(2.dp)
                 .clickable { uriHandler.openUri(note.sourceUrl) }

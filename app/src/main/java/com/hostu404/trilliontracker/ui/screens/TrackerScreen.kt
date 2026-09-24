@@ -33,6 +33,7 @@ import com.hostu404.trilliontracker.data.Crossing
 import com.hostu404.trilliontracker.data.FlightState
 import com.hostu404.trilliontracker.data.NetWorthEngine
 import com.hostu404.trilliontracker.data.Person
+import com.hostu404.trilliontracker.data.VesselState
 import com.hostu404.trilliontracker.ui.Format
 import com.hostu404.trilliontracker.ui.TrackerUiState
 import com.hostu404.trilliontracker.ui.components.DeltaChip
@@ -68,7 +69,7 @@ fun TrackerScreen(
             biggestMover(state)?.let { mover ->
                 item { BiggestMoverCard(mover) }
             }
-            item { SectionLabel(text = "TOP GONKS") }
+            item { SectionLabel(text = "T0P G0NK$") }
             // state.topTen, not state.rankedPeople — the backend/holdings.json
             // bench can track more than 10 people (see TrackerUiState.topTen's
             // doc comment) so a near-boundary overtake surfaces automatically;
@@ -108,7 +109,7 @@ fun TrackerScreen(
     }
 }
 
-/** A HUD-bracket section header — "[ TOP GONKS ]" in the chrome accent, not the data one. */
+/** A HUD-bracket section header — "[ T0P G0NK$ ]" in the chrome accent, not the data one. */
 @Composable
 private fun SectionLabel(text: String) {
     Text(
@@ -440,7 +441,19 @@ private fun PersonRow(
     onClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val airborne = person.flight?.state == FlightState.AIRBORNE
+    // Reverted 2026-09-24, same day it was changed: briefly widened to
+    // `state != UNKNOWN` (any confirmed fix, parked or not — see the removed
+    // comment this replaces), but that made this row's glow and ✈/⚓ glyph
+    // light up for a plane sitting SIGNAL_LOST on a runway somewhere or a
+    // boat idle in port, with nothing on the person's own detail screen
+    // actually moving to match — a real, reported disconnect: the row
+    // promised "in transit" and the profile behind it showed a parked
+    // vehicle. Back to a strict moving-right-now check. A confirmed-but-
+    // parked fix is still fully visible elsewhere (the card's own ON_GROUND/
+    // IN_PORT status, the "● tracking" text below) — it just no longer
+    // borrows this row's transit indicator to say so.
+    val hasFlightSignal = person.flight?.state == FlightState.AIRBORNE
+    val hasVesselSignal = person.vessel?.state == VesselState.UNDERWAY
 
     Row(
         modifier = modifier
@@ -461,12 +474,15 @@ private fun PersonRow(
             )
             .background(TT.surface, TT.panelShape(12.dp))
             .then(
-                // Flag the one state actually worth noticing in a leaderboard
-                // row — someone's plane is in the air right now — rather
-                // than "live," which is the common case for most rows here
-                // and already has its own "● live" text.
-                if (airborne) Modifier.honeycombGlowCell(xFraction = 0.38f, yFraction = 0.3f, color = TT.warning)
-                else Modifier
+                // Flag whoever's plane or boat is actually in transit right
+                // now — not "live," which is about live wealth pricing and
+                // already has its own "● tracking" text below, and not just
+                // "we have a fix" (see hasFlightSignal/hasVesselSignal above).
+                if (hasFlightSignal || hasVesselSignal) {
+                    Modifier.honeycombGlowCell(xFraction = 0.38f, yFraction = 0.3f, color = TT.warning)
+                } else {
+                    Modifier
+                }
             )
             .border(1.dp, TT.border, TT.panelShape(12.dp))
             .padding(horizontal = 12.dp, vertical = 10.dp),
@@ -491,9 +507,18 @@ private fun PersonRow(
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
-                if (airborne) {
+                if (hasFlightSignal) {
                     Spacer(Modifier.width(6.dp))
                     Text(text = "✈", color = TT.warning, fontSize = 12.sp)
+                }
+                if (hasVesselSignal) {
+                    Spacer(Modifier.width(6.dp))
+                    // Same anchor glyph the vessel detail card and map pin
+                    // already use for this state (BoatCard's "UNDERWAY NOW"
+                    // chip, PersonDetailScreen's vesselMapPin) — one symbol
+                    // for "vessel" throughout, rather than introducing a
+                    // second one just for this row.
+                    Text(text = "⚓", color = TT.warning, fontSize = 12.sp)
                 }
             }
             Row(verticalAlignment = Alignment.CenterVertically) {

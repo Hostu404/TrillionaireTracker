@@ -97,6 +97,28 @@ DEAD_RECKON_MAX_SECONDS = 30 * 60  # how far past the last real fix we'll still
                                     # project forward a display-only estimate —
                                     # see the dead-reckoning block in
                                     # vessel_status() for the full rationale.
+
+# The maritime mirror of SIGNAL_LOST_GRACE_SECONDS/SIGNAL_LOST_HARD_CEILING_SECONDS
+# above — same two-trigger shape, deliberately much longer thresholds. AIS
+# coverage here is entirely terrestrial (aisstream.io's network is shore/
+# island-based receivers, not satellite), so a yacht mid-ocean crossing —
+# genuinely underway the whole time, nothing wrong at all — can legitimately
+# go a week or more with zero hits simply because no receiver was ever in
+# range. Using the flight thresholds here would flag every routine Atlantic
+# or Pacific crossing as "signal lost" almost immediately, which is worse
+# than the plain "Underway" it already reads as. These are set past what
+# even a slow ocean crossing plausibly takes:
+#   - VESSEL_SIGNAL_LOST_GRACE_SECONDS only fires once there's *also* a
+#     recent heading-based guess at which port the vessel was making for
+#     (see estimate_heading_port) — a course that clearly pointed at one
+#     specific port, followed by silence well past this grace period, reads
+#     as an arrival there that just never got picked up by a receiver.
+#   - VESSEL_SIGNAL_LOST_HARD_CEILING_SECONDS applies regardless of any
+#     estimate — past this point, continuing to call it "Underway" with no
+#     confirmation at all stops being an honest description of what's known.
+VESSEL_SIGNAL_LOST_GRACE_SECONDS = 4 * 86_400    # 4 days
+VESSEL_SIGNAL_LOST_HARD_CEILING_SECONDS = 10 * 86_400  # 10 days
+
 NEWS_EVERY = 15      # passes between RSS reads
 WIKI_REFRESH_SECONDS = 30 * 86_400   # a photo/article link barely ever changes
 
@@ -445,10 +467,31 @@ def airport_label(row: dict) -> str:
     return row.get("name") or row["ident"]
 
 
+def _wrapped_dlon(lon1: float, lon2: float) -> float:
+    """
+    lon2 - lon1, but taking the shorter way around the globe instead of the
+    raw arithmetic difference. Matters once a fix or an airport/port sits
+    near the antimeridian (Fiji, the Aleutians, eastern Russia, any Pacific
+    crossing at high latitude): a plain subtraction says a point at 179.95°E
+    and one at 179.95°W are 359.9 degrees apart, when they're actually 0.1°
+    apart. `_haversine_nm`/`_bearing_deg` never had this problem — they feed
+    the raw difference through sin()/cos(), which are periodic and self-
+    correct — but nearest_airport()/nearest_port()/_nearest_country() do a
+    plain flat-Earth (dlat, dlon*cos(lat)) approximation with no trig to
+    save them, so they need this normalization explicitly. Without it, a
+    real fix within a few nm of an airport/port straddling the date line
+    reads as ~130,000 degrees² away and silently fails to match anything.
+    """
+    d = (lon2 - lon1) % 360.0
+    return d - 360.0 if d > 180.0 else d
+
+
 def nearest_airport(airports, lat: float, lon: float) -> str | None:
     best, best_d = None, 1e18
     for row in airports:
-        d = (row["lat"] - lat) ** 2 + ((row["lon"] - lon) * math.cos(math.radians(lat))) ** 2
+        dlat = row["lat"] - lat
+        dlon = _wrapped_dlon(lon, row["lon"]) * math.cos(math.radians(lat))
+        d = dlat ** 2 + dlon ** 2
         if d < best_d:
             best, best_d = row["ident"], d
     # ~0.45 degrees; beyond that we are guessing, so we say nothing.
@@ -539,6 +582,76 @@ def estimate_heading_destination(
         if dist < best_d:
             best, best_d = ident, dist
     return best
+
+
+def estimate_heading_port(
+    ports, lat: float, lon: float, course_deg: float, exclude_unlocode: str | None = None
+) -> str | None:
+    """
+    The maritime mirror of estimate_heading_destination() — same cone-search
+    idea (nearest thing ahead, within HEADING_CONE_DEG of the current
+    course), swapping airports for ports.csv's ~16,666 UN/LOCODE seaports.
+    No large/medium-only filter the way the airport version has (ports.csv
+    carries no size classification), so this can land on a small harbor as
+    easily as a major one — reasonable, since a slow-moving vessel is just as
+    likely headed for a small one, and the result is always labeled an
+    unconfirmed guess wherever it's shown, never a filed plan.
+
+    Used only to give vessel_status()'s SIGNAL_LOST state something concrete
+    to name ("possibly near X") instead of a bare "unconfirmed" — see
+    VESSEL_SIGNAL_LOST_GRACE_SECONDS's doc comment for why that state exists
+    at all and why it fires so much later than the flight equivalent.
+    """
+    best, best_d = None, 1e18
+    for row in ports:
+        code = row["unlocode"]
+        if exclude_unlocode and code == exclude_unlocode:
+            continue
+        dist = _haversine_nm(lat, lon, row["lat"], row["lon"])
+        if dist < HEADING_MIN_NM or dist > HEADING_MAX_NM:
+            continue
+        bearing = _bearing_deg(lat, lon, row["lat"], row["lon"])
+        if _angular_diff(bearing, course_deg) > HEADING_CONE_DEG:
+            continue
+        if dist < best_d:
+            best, best_d = code, dist
+    return best
+
+
+def format_ais_eta(eta: dict | None, now: int) -> str | None:
+    """
+    Turns the raw {month, day, hour, minute} ais_listener.py caches (see its
+    apply_message() doc comment for the AIS "not available" sentinels
+    already stripped out before it gets here) into a display string, or None
+    if there's nothing usable.
+
+    AIS's ETA field has no year at all — a ship broadcasts "Oct 3, 14:30"
+    every voyage, indefinitely — so this never invents one; it just formats
+    month/day (+ time-of-day, when broadcast) exactly as reported. `now` is
+    only used to sanity-check the day against the right month/year length
+    (so a broadcast day-31-in-a-30-day-month doesn't slip through); it
+    otherwise plays no role, since there's no year to compare against.
+    Still just a display convenience, not a correction of what was actually
+    broadcast — the crew-entered, routinely-stale nature of this field is
+    the caller's caveat to add, not this function's.
+    """
+    if not isinstance(eta, dict):
+        return None
+    month, day = eta.get("month"), eta.get("day")
+    if not isinstance(month, int) or not (1 <= month <= 12):
+        return None
+    this_year = time.gmtime(now).tm_year
+    # Leap-year-safe for `this_year`; good enough for a Feb-29-in-a-non-leap-
+    # year sanity check on a field that's routinely stale or mistyped
+    # anyway, not for anything that needs calendar correctness.
+    if not isinstance(day, int) or not (1 <= day <= calendar.monthrange(this_year, month)[1]):
+        return None
+
+    hour, minute = eta.get("hour"), eta.get("minute")
+    date_part = f"{calendar.month_abbr[month]} {day}"
+    if isinstance(hour, int) and isinstance(minute, int):
+        return f"{date_part}, {hour:02d}:{minute:02d} UTC"
+    return date_part
 
 
 def _fetch_readsb_style(url: str, icao_hex: str, source_label: str) -> dict | None:
@@ -1020,7 +1133,9 @@ def port_label(row: dict) -> str:
 def nearest_port(ports, lat: float, lon: float) -> str | None:
     best, best_d = None, 1e18
     for row in ports:
-        d = (row["lat"] - lat) ** 2 + ((row["lon"] - lon) * math.cos(math.radians(lat))) ** 2
+        dlat = row["lat"] - lat
+        dlon = _wrapped_dlon(lon, row["lon"]) * math.cos(math.radians(lat))
+        d = dlat ** 2 + dlon ** 2
         if d < best_d:
             best, best_d = row["unlocode"], d
     # Coastline is sparser than airports, so a bit more slack than the
@@ -1063,7 +1178,27 @@ def _point_in_ring(lon: float, lat: float, ring: list[float]) -> bool:
     """
     Standard ray-casting point-in-polygon test. `ring` is the flat
     [lon0, lat0, lon1, lat1, ...] encoding world_countries.json uses.
+
+    A handful of real countries' rings straddle the antimeridian outright
+    (confirmed in world_countries.json: Russia and Fiji both carry rings
+    whose longitudes span the full -180..180 range, not two separate rings
+    pre-split at the date line). Ray-casting assumes a flat, continuous x
+    axis, so a raw vertex list crossing from +179 to -179 looks like a huge
+    ~358-degree jump instead of the real ~2-degree one, and the edge-
+    crossing test above silently produces wrong containment results near
+    there. Fix: when a ring's own longitude span exceeds 180 degrees (the
+    tell that it wraps rather than genuinely spanning that much of the
+    globe), remap every negative longitude in it — and the query point, if
+    it's also negative — into the equivalent 180..360 value, so the ring
+    becomes one continuous span with no fake jump. Rings that don't
+    straddle the date line are untouched.
     """
+    lons = ring[0::2]
+    if max(lons) - min(lons) > 180.0:
+        ring = [(v + 360.0 if v < 0 else v) if i % 2 == 0 else v for i, v in enumerate(ring)]
+        if lon < 0:
+            lon += 360.0
+
     n = len(ring) // 2
     inside = False
     x, y = lon, lat
@@ -1103,7 +1238,7 @@ def _nearest_country(countries: list[dict], lat: float, lon: float) -> str | Non
     for country in countries:
         for ring in country.get("rings", []):
             for i in range(0, len(ring) - 1, 2):
-                dlon = (ring[i] - lon) * math.cos(math.radians(lat))
+                dlon = _wrapped_dlon(lon, ring[i]) * math.cos(math.radians(lat))
                 dlat = ring[i + 1] - lat
                 d = dlon * dlon + dlat * dlat
                 if d < best_d:
@@ -1243,6 +1378,7 @@ def vessel_status(subject: Subject, prev: dict, ports, ais_cache: dict, countrie
     sog = entry.get("sog") if fresh else None  # knots
     cog = entry.get("cog") if fresh else None  # degrees true, course over ground
     destination = (entry.get("destination") or "").strip() if fresh else None
+    eta_raw = entry.get("eta") if fresh else None
 
     # A moored/anchored vessel still shows a little drift in AIS SOG — 0.5kt
     # is the conventional "not really moving" cutoff most trackers use.
@@ -1342,10 +1478,24 @@ def vessel_status(subject: Subject, prev: dict, ports, ais_cache: dict, countrie
         # attributed to wherever it was last seen rather than "no signal".
         bucket = memory.get("last_port") or "UNKNOWN_PORT"
     elif was == "UNDERWAY":
-        # Last confirmed underway with no arrival recorded since — a gap
-        # in receiver coverage mid-transit, not a disappearance, so this
-        # stays UNDERWAY: still the same passage, not a third state.
-        bucket = "UNDERWAY"
+        # Last confirmed underway with no arrival recorded since. Ordinary
+        # AIS coverage gaps here can be long and completely unremarkable —
+        # this network is shore-based, so a genuine open-ocean crossing can
+        # go days with nothing heard — so this stays UNDERWAY by default,
+        # same as before.
+        #
+        # But it stops being an honest description once the silence outlasts
+        # even a generous ocean crossing, or runs well past a course that was
+        # clearly pointing at one specific port right before it went quiet —
+        # the same two-trigger shape flight_status() uses for SIGNAL_LOST,
+        # just with much longer thresholds (see VESSEL_SIGNAL_LOST_GRACE_SECONDS's
+        # doc comment for why).
+        gap = now - memory.get("last_seen", now)
+        had_estimate = bool(memory.get("last_underway_estimate_port"))
+        if (had_estimate and gap >= VESSEL_SIGNAL_LOST_GRACE_SECONDS) or gap >= VESSEL_SIGNAL_LOST_HARD_CEILING_SECONDS:
+            bucket = "SIGNAL_LOST"
+        else:
+            bucket = "UNDERWAY"
     else:
         # This vessel has never once been located — nothing to carry
         # forward to, so "no signal" is an honest description here, not a
@@ -1399,6 +1549,28 @@ def vessel_status(subject: Subject, prev: dict, ports, ais_cache: dict, countrie
         memory["last_seen"] = now
     prev[subject.mmsi] = memory
 
+    underway = state == "UNDERWAY"
+
+    # The maritime mirror of flight_status()'s estimate_heading_destination
+    # call — see estimate_heading_port's doc comment. Uses the raw fix
+    # (lat/lon/cog), not dr_lat/dr_lon, for the same reason `here` above
+    # does: this is meant to reflect an actually-confirmed course, not a
+    # display-only projection.
+    estimate = None
+    if underway and ports and lat is not None and lon is not None and isinstance(cog, (int, float)):
+        estimate = estimate_heading_port(
+            ports, lat, lon, float(cog), exclude_unlocode=memory.get("departed_port")
+        )
+
+    if underway and estimate is not None:
+        # Remembered across passes so a later signal-loss gap (see the
+        # `was == "UNDERWAY"` branch above) has something concrete to judge
+        # plausibility against instead of guessing blind — only overwritten
+        # on a fresh, real estimate, so a pass with a momentarily missing
+        # course doesn't erase the last good guess.
+        memory["last_underway_estimate_port"] = estimate
+        memory["last_underway_estimate_at"] = now
+
     return {
         "name": subject.vessel_name or subject.mmsi,
         "mmsi": subject.mmsi,
@@ -1413,6 +1585,24 @@ def vessel_status(subject: Subject, prev: dict, ports, ais_cache: dict, countrie
         # client labels it as such; we don't clean it up into looking more
         # authoritative than it is.
         "selfReportedDestination": destination or None,
+        # Crew-entered, same message (5) as Destination and the same
+        # unverified/self-reported caveat — see format_ais_eta's doc
+        # comment for why this never carries a year. Left None whenever
+        # destination is too (both come off the same fresh ShipStaticData
+        # frame), so the client never shows an ETA with no destination to
+        # attach it to.
+        "selfReportedEta": format_ais_eta(eta_raw, now) if destination else None,
+        # The maritime mirror of flight_status()'s "estimatedDestinationIcao"
+        # — same live course-based guess, computed on every pass above
+        # (`estimate` — see the comment right before it), just not exposed
+        # to the client until now. Previously this computation only ever
+        # reached the client gated behind SIGNAL_LOST (see
+        # "probablePortUnlocode" below), so a boat underway with nothing
+        # self-reported showed a flat "no destination broadcast" even on
+        # passes where this exact guess existed. Independent of
+        # selfReportedDestination — both can be set at once; the client
+        # prefers the self-reported one and falls back to this.
+        "estimatedDestinationPortUnlocode": estimate,
         # Same fix as flight_status() — 0, not `now`, when never confirmed.
         # See the comment there for why the old `now` default silently
         # reported a fake, ever-decreasing "last seen" for a vessel that had
@@ -1451,6 +1641,22 @@ def vessel_status(subject: Subject, prev: dict, ports, ais_cache: dict, countrie
             if (state in ("IN_PORT", "UNDERWAY") and here is None and dr_lat is not None and dr_lon is not None)
             else None
         ),
+        # The maritime mirror of FlightStatus.currentBucket — see its doc
+        # comment. Distinct from `state` (UNDERWAY/IN_PORT/UNKNOWN) the same
+        # way currentBucket is distinct from a flight's state: `state` alone
+        # can't tell an ordinary short AIS gap apart from one that's crossed
+        # into SIGNAL_LOST territory (see the `was == "UNDERWAY"` branch
+        # above) — the client needs this to pick the right label/color for
+        # what's happening right now.
+        "currentBucket": bucket,
+        # Only meaningful when currentBucket == "SIGNAL_LOST": the last
+        # heading-based guess at a port before contact was lost, so the
+        # client can say *where* it's possibly near instead of just
+        # "somewhere, we don't know". None when no such guess was ever made
+        # (e.g. the hard-ceiling trigger fired with no clear course to go
+        # on) — the client should fall back to an unspecified "possibly
+        # near — unclear" in that case rather than treating None as an error.
+        "probablePortUnlocode": memory.get("last_underway_estimate_port") if bucket == "SIGNAL_LOST" else None,
     }
 
 

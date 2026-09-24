@@ -38,6 +38,9 @@ object Format {
     /** "3,237" — a plain grouped whole number, no scale suffix (for counts that read best unscaled, like a day count). */
     fun wholeCount(value: Double): String = grouped.format(value.roundToLong())
 
+    /** "4,213 nm" — a great-circle distance total, grouped for readability. */
+    fun nauticalMiles(value: Double): String = grouped.format(value.roundToLong()) + " nm"
+
     /** "241.3 billion" / "892.4 million" — a plain (non-dollar) compact count. */
     fun compactCount(value: Double): String {
         val v = abs(value)
@@ -118,6 +121,21 @@ object Format {
             }
             else -> "40+ years"
         }
+    }
+
+    /**
+     * "39.5000°N, 2.9000°E" — plain decimal-degree text for the one place
+     * this app ever surfaces a raw coordinate: FlightStatus/VesselStatus's
+     * currentLat/currentLon fallback (a real fix that matched no known
+     * airport/port), always shown paired with generalLocation's coarse
+     * place name, never on its own. 4 decimals (~11m) matches the actual
+     * resolution ADS-B/AIS fixes are good to — more digits would just be
+     * floating-point noise dressed up as precision, not real accuracy.
+     */
+    fun coordinate(lat: Double, lon: Double): String {
+        val latHem = if (lat < 0) "S" else "N"
+        val lonHem = if (lon < 0) "W" else "E"
+        return String.format(Locale.UK, "%.4f°%s, %.4f°%s", abs(lat), latHem, abs(lon), lonHem)
     }
 
     private val ISO_DATE: DateTimeFormatter = DateTimeFormatter.ISO_LOCAL_DATE

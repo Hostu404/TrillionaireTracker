@@ -355,6 +355,34 @@ data class VesselStatus(
      * verified, frequently blank or wrong. Shown only with that caveat.
      */
     val selfReportedDestination: String? = null,
+    /**
+     * Crew-entered, same Message 5 broadcast as [selfReportedDestination]
+     * and the same unverified caveat — routinely blank or stale. Carries no
+     * year (AIS's ETA field never does; see `format_ais_eta()` in
+     * snapshot_worker.py for exactly how the backend formats it), so it
+     * reads as "Oct 3" or "Oct 3, 14:30 UTC", never a full date. Always null
+     * whenever [selfReportedDestination] is too — an arrival estimate with
+     * no stated destination to attach it to isn't worth showing.
+     */
+    val selfReportedEta: String? = null,
+    /**
+     * The maritime mirror of [FlightStatus.estimatedDestinationIcao] — a
+     * live, unconfirmed best guess computed every pass while [state] is
+     * UNDERWAY, from current course + position against known ports, exactly
+     * the way the flight estimate works against airports. Added 2026-09-24
+     * to close an asymmetry: the backend already ran this exact computation
+     * every pass (see `estimate_heading_port()` in snapshot_worker.py, used
+     * for [probablePortUnlocode]) but never surfaced it here except after
+     * SIGNAL_LOST — so a boat underway with nothing self-reported showed a
+     * flat "no destination broadcast" even on passes where a perfectly good
+     * course-based guess existed. Computed independent of
+     * [selfReportedDestination] — both can be non-null at once — so the UI
+     * is what decides priority: show the self-reported destination when
+     * there is one (crew-entered beats a course guess), and fall back to
+     * this only when there isn't. Null whenever the course doesn't clearly
+     * point at a known port yet.
+     */
+    val estimatedDestinationPortUnlocode: String? = null,
     val lastSeenEpoch: Long = 0L,
     val liveMapUrl: String? = null,
     /**
@@ -387,13 +415,13 @@ data class VesselStatus(
     val recentStops: List<PortStop> = emptyList(),
     /**
      * Server-side time-share aggregate, mirroring [FlightStatus.locationBreakdown]
-     * bucket-for-bucket ("UNDERWAY", "NO_SIGNAL", "UNKNOWN_PORT" in place of the
-     * flight sentinels). Not currently consumed client-side — same as the flight
-     * field, the UI rebuilds its own timeline segments from [recentStops] instead
-     * (see `buildTimelineSegments` in `PersonDetailScreen.kt`) so the strip and its
-     * legend can never drift out of sync with a second, server-computed total. Kept
-     * here for schema parity with the backend and in case a future consumer wants
-     * the raw aggregate without reconstructing it.
+     * bucket-for-bucket ("UNDERWAY", "SIGNAL_LOST", "NO_SIGNAL", "UNKNOWN_PORT" in
+     * place of the flight sentinels). Not currently consumed client-side — same as
+     * the flight field, the UI rebuilds its own timeline segments from [recentStops]
+     * instead (see `buildTimelineSegments` in `PersonDetailScreen.kt`) so the strip
+     * and its legend can never drift out of sync with a second, server-computed
+     * total. Kept here for schema parity with the backend and in case a future
+     * consumer wants the raw aggregate without reconstructing it.
      */
     val locationBreakdown: List<LocationShare> = emptyList(),
     /**
@@ -401,7 +429,27 @@ data class VesselStatus(
      * [FlightStatus.trackedSeconds]. This is the field the vessel "TIME BY
      * LOCATION" card actually gates and sizes its window on.
      */
-    val trackedSeconds: Long = 0L
+    val trackedSeconds: Long = 0L,
+    /**
+     * The maritime mirror of [FlightStatus.currentBucket] — see its doc
+     * comment. Distinct from [state]: a plain [VesselState.UNKNOWN] reading
+     * can't by itself tell an ordinary short AIS gap (this stays "UNDERWAY"
+     * here) apart from a gap that's run long enough the backend no longer
+     * believes it's still the same passage ("SIGNAL_LOST") — only this
+     * field does. Added 2026-09-24 alongside [probablePortUnlocode], to
+     * close the one asymmetry flights had that vessels didn't: a severity
+     * tier beyond a single flat "no signal".
+     */
+    val currentBucket: String? = null,
+    /**
+     * The maritime mirror of [FlightStatus.probableIcao]. Only meaningful
+     * when [currentBucket] is "SIGNAL_LOST": the last heading-based guess at
+     * which port the vessel was making for before contact was lost, so the
+     * UI can say *where* it's possibly near instead of a bare "somewhere,
+     * unknown". Null when no such guess exists — the UI should read that as
+     * "possibly still underway, location unclear," not as missing data.
+     */
+    val probablePortUnlocode: String? = null
 )
 
 @Serializable

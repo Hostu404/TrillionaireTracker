@@ -102,10 +102,14 @@ private data class FamilyHistoryFile(
  * between polls, so it ships with the app itself rather than riding the
  * live snapshot pipeline that `holdings.json`/`snapshot_worker.py` feed.
  *
- * A person absent from the map (everyone except the `brin` proof-of-concept
- * entry, for now) simply has no Family History entry point shown — see
- * `PersonDetailScreen`'s use of [entryFor] — rather than the screen ever
- * showing an empty or guessed one.
+ * A person absent from the map simply has no Family History entry point
+ * shown — see `PersonDetailScreen`'s use of [entryFor] — rather than the
+ * screen ever showing an empty or guessed one. `brin` was the original
+ * proof-of-concept entry (chosen first because his family's story happens
+ * to be unusually well documented on the record); the roster has since
+ * grown to cover all 10 currently-tracked people (see
+ * `family_history.json`'s own `_comment`), each stopping wherever its own
+ * sourcing genuinely runs out rather than all reaching the same depth.
  */
 object FamilyHistoryRepository {
     private const val ASSET_PATH = "family_history.json"

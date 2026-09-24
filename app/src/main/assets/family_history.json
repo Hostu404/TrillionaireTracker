@@ -367,7 +367,8 @@
               "years": null,
               "facts": [
                 "A schoolteacher in Taiwan.",
-                "A native Taiwanese Hokkien speaker, like her husband, in what the family itself has described as a middle-class household."
+                "A native Taiwanese Hokkien speaker, like her husband, in what the family itself has described as a middle-class household.",
+                "The youngest of twelve siblings in the Lo (羅) family of Tainan; Taiwanese business press has reported that one of her older siblings in that generation, Lo Po-mu, was the paternal grandfather of AMD CEO Lisa Su — making Huang and Su extended relatives, by that account, through his mother's family."
               ],
               "sourceUrl": "https://en.wikipedia.org/wiki/Jensen_Huang",
               "sourceLabel": "Wikipedia, “Jensen Huang”"
@@ -609,7 +610,9 @@
               "relation": "Mother",
               "years": null,
               "facts": [
-                "A stockbroker."
+                "A stockbroker.",
+                "Born August 5, 1937 in New York City; per her 2014 obituary, had a sister, Judith (Langfan) Shilling.",
+                "Per the same obituary, graduated from Baruch College in New York City with a major in economics; the family lived in Killeen, Texas and Buffalo, New York before settling in Houston."
               ],
               "sourceUrl": "https://en.wikipedia.org/wiki/Michael_Dell",
               "sourceLabel": "Wikipedia, “Michael Dell”"
@@ -630,12 +633,43 @@
               "sourceLabel": "Computer History Museum, “The future of integrated electronics”"
             }
           },
-          "trailEndsNote": "Michael Dell was born into a Jewish family in Houston, but available sourcing does not document his parents' own parents — no grandparent names, occupations, or immigration history were found. The record stops with Alexander and Lorraine.",
+          "trailEndsNote": null,
           "beliefs": {
             "text": "Michael Dell was born into a Jewish family in Houston. Available sourcing states this plainly but doesn't describe the family's level of observance or synagogue affiliation, so nothing further is claimed here.",
             "sourceUrl": "https://en.wikipedia.org/wiki/Michael_Dell",
             "sourceLabel": "Wikipedia, “Michael Dell”"
           }
+        },
+        {
+          "label": "Grandparents",
+          "region": "New York City, USA",
+          "members": [
+            {
+              "name": "Rubin Langfan",
+              "relation": "Maternal grandfather",
+              "years": null,
+              "facts": [
+                "Named in his daughter Lorraine's 2014 obituary; no occupation or other biographical detail was found in available sourcing."
+              ],
+              "sourceUrl": "https://www.legacy.com/us/obituaries/houstonchronicle/name/lorraine-dell-obituary?id=19606218",
+              "sourceLabel": "Houston Chronicle (via Legacy.com), “Lorraine Dell Obituary”"
+            },
+            {
+              "name": "Hilda Langfan",
+              "relation": "Maternal grandmother",
+              "years": null,
+              "facts": [
+                "Named in her daughter Lorraine's 2014 obituary; no occupation or other biographical detail was found in available sourcing."
+              ],
+              "sourceUrl": "https://www.legacy.com/us/obituaries/houstonchronicle/name/lorraine-dell-obituary?id=19606218",
+              "sourceLabel": "Houston Chronicle (via Legacy.com), “Lorraine Dell Obituary”"
+            }
+          ],
+          "globalContext": null,
+          "familyBusiness": null,
+          "beliefs": null,
+          "worldSnapshot": null,
+          "trailEndsNote": "Only Michael Dell's mother's side goes back this far: Lorraine (née Langfan) Dell's 2014 obituary names her own parents, Rubin and Hilda Langfan of New York City, and a sister, Judith Shilling. No comparable source was found naming Alexander Dell's parents, so the paternal line still stops at the Parents generation."
         }
       ]
     },
@@ -650,7 +684,8 @@
               "relation": "Father",
               "years": null,
               "facts": [
-                "A railway worker for Spain's national rail network, whose postings moved the family first to Tolosa and, when Amancio was 14, to A Coruña in Galicia."
+                "A railway worker for Spain's national rail network, whose postings moved the family first to Tolosa and, when Amancio was 14, to A Coruña in Galicia.",
+                "By the time the family settled in A Coruña, they lived in the Tafona neighborhood, according to later Spanish-language reporting on Ortega's childhood."
               ],
               "sourceUrl": "https://en.wikipedia.org/wiki/Amancio_Ortega",
               "sourceLabel": "Wikipedia, “Amancio Ortega”"
@@ -660,10 +695,11 @@
               "relation": "Mother",
               "years": null,
               "facts": [
-                "From the Province of Valladolid; occupation not specified in available sourcing."
+                "Born in Valoria la Buena (Valladolid); worked as a domestic house cleaner (\"empleada de hogar\").",
+                "Described in later reporting as strong-willed, quiet, and highly disciplined — credited with instilling values of hard work, saving, and discretion in her children."
               ],
-              "sourceUrl": "https://en.wikipedia.org/wiki/Amancio_Ortega",
-              "sourceLabel": "Wikipedia, “Amancio Ortega”"
+              "sourceUrl": "https://theobjective.com/gente/2025-11-13/antonio-josefa-padres-amancio-ortega-zara/",
+              "sourceLabel": "The Objective (theobjective.com), reporting on Amancio Ortega's parents"
             }
           ],
           "globalContext": {
