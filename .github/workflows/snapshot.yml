@@ -59,35 +59,61 @@ jobs:
         run: |
           git config user.name "snapshot-bot"
           git config user.email "actions@users.noreply.github.com"
-          git add backend/state.json backend/airports.csv docs/snapshot.json
-          if git diff --cached --quiet; then
-            echo "nothing changed, skipping commit"
-            exit 0
-          fi
-          git commit -m "Refresh snapshot ($(date -u +%Y-%m-%dT%H:%M:%SZ))"
+
+          # Stash this run's freshly computed output somewhere a `git reset
+          # --hard` below can't touch it. That reset is the point (see the
+          # retry loop's comment) — this just makes sure the output survives it.
+          mkdir -p /tmp/snapshot-out
+          cp backend/state.json /tmp/snapshot-out/state.json
+          cp backend/airports.csv /tmp/snapshot-out/airports.csv
+          cp docs/snapshot.json /tmp/snapshot-out/snapshot.json
 
           # This job and ais.yml both run on the same 5-minute cron and both
-          # push straight to main. concurrency: only serializes runs of THIS
-          # workflow against each other — it does nothing for a push landing
-          # on main from the other workflow at the same moment, which is
-          # exactly the "! [rejected] main -> main (fetch first)" failure
-          # ais.yml hit. Rebasing this one commit onto whatever just landed
-          # and retrying the push turns that race into a self-healing no-op
-          # instead of a failed run, since the two workflows never touch the
-          # same files (this one only ever writes backend/state.json,
-          # backend/airports.csv, docs/snapshot.json), so the rebase itself
-          # can't conflict.
+          # push straight to main, and this workflow can also overlap with
+          # itself (a manual workflow_dispatch landing close to a scheduled
+          # run) — concurrency: only serializes runs of THIS workflow's
+          # *jobs*, it doesn't stop a push from a still-in-flight run landing
+          # on main in the gap between this run's checkout and its own push.
+          #
+          # The previous version of this loop handled that by rebasing this
+          # run's one commit onto whatever just landed and retrying — fine
+          # against ais.yml (which only ever touches backend/ais_cache.json,
+          # so that rebase truly can't conflict), but wrong against another
+          # snapshot.yml run: state.json/snapshot.json are wholesale
+          # regenerated every pass, not incrementally edited, so two runs'
+          # commits are two full-file rewrites of the same lines — a rebase
+          # has to diff-and-replay one on the other and that's a real,
+          # legitimate conflict (this is exactly what "CONFLICT (content):
+          # Merge conflict in backend/state.json" was — not a bug in the
+          # rebase, just the wrong tool for this data).
+          #
+          # There's no real merge to do here, though: this run's output is
+          # already a complete, self-contained recomputation, so "newest
+          # write wins" is always the correct resolution. So instead of
+          # rebasing a diff, each retry resets straight onto the latest
+          # main and re-stamps this run's already-computed files on top as
+          # a fresh commit — an overwrite, not a merge, so there's nothing
+          # left for git to conflict over.
           for attempt in 1 2 3 4 5; do
+            git fetch origin main
+            git reset --hard origin/main
+
+            cp /tmp/snapshot-out/state.json backend/state.json
+            cp /tmp/snapshot-out/airports.csv backend/airports.csv
+            mkdir -p docs
+            cp /tmp/snapshot-out/snapshot.json docs/snapshot.json
+
+            git add backend/state.json backend/airports.csv docs/snapshot.json
+            if git diff --cached --quiet; then
+              echo "nothing changed against latest main, skipping commit"
+              exit 0
+            fi
+            git commit -m "Refresh snapshot ($(date -u +%Y-%m-%dT%H:%M:%SZ))"
+
             if git push; then
               exit 0
             fi
-            echo "push rejected (attempt $attempt/5) — another workflow committed first, rebasing onto origin/main and retrying"
-            git fetch origin main
-            if ! git rebase origin/main; then
-              echo "rebase hit a real conflict — bailing out rather than pushing something broken; next scheduled run will pick this up"
-              git rebase --abort
-              exit 1
-            fi
+            echo "push rejected (attempt $attempt/5) — another push landed first; re-syncing to latest main and re-stamping this run's output instead of rebasing"
             sleep $((RANDOM % 5 + 1))
           done
           echo "push still rejected after 5 retries — giving up this run; next scheduled run will retry"
