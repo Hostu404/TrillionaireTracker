@@ -33,6 +33,7 @@ import coil.request.ImageRequest
 import com.hostu404.trilliontracker.ui.TrackerViewModel
 import com.hostu404.trilliontracker.ui.components.DigitalFxOverlay
 import com.hostu404.trilliontracker.ui.components.ScanlineOverlay
+import com.hostu404.trilliontracker.ui.components.edgeSwipeBack
 import com.hostu404.trilliontracker.ui.screens.FamilyHistoryScreen
 import com.hostu404.trilliontracker.ui.screens.PersonDetailScreen
 import com.hostu404.trilliontracker.ui.screens.TrackerScreen
@@ -169,26 +170,42 @@ private fun App() {
                 )
             }
 
-            // Neither destination below takes an onBack callback any more —
-            // both used to render their own in-app back button, removed
-            // 2026-09-24 as pure redundancy against the phone's own system
-            // back, which Navigation Compose already wires up to
-            // popBackStack() automatically for every destination, button or
-            // not.
+            // Neither destination below takes an onBack callback for a
+            // rendered button any more — both used to draw their own in-app
+            // back button, removed 2026-09-24 as pure redundancy against the
+            // phone's own system back, which Navigation Compose already
+            // wires up to popBackStack() automatically for every
+            // destination, button or not. [edgeSwipeBack] below adds a
+            // second, gesture-driven path to that same popBackStack() call
+            // rather than a visible button — see its own doc comment for
+            // why one's needed at all (the Android Studio emulator's
+            // gesture-nav mode has no reachable back affordance of its own).
             composable("person/{personId}") { entry ->
-                PersonDetailScreen(
-                    personId = entry.arguments?.getString("personId").orEmpty(),
-                    state = state,
-                    onOpenFamilyHistory = { id -> navController.navigate("familyHistory/$id") }
-                )
+                Box(
+                    Modifier
+                        .fillMaxSize()
+                        .edgeSwipeBack(onBack = { navController.popBackStack() })
+                ) {
+                    PersonDetailScreen(
+                        personId = entry.arguments?.getString("personId").orEmpty(),
+                        state = state,
+                        onOpenFamilyHistory = { id -> navController.navigate("familyHistory/$id") }
+                    )
+                }
             }
 
             composable("familyHistory/{personId}") { entry ->
                 val id = entry.arguments?.getString("personId").orEmpty()
-                FamilyHistoryScreen(
-                    personId = id,
-                    personName = state.personById(id)?.name ?: id
-                )
+                Box(
+                    Modifier
+                        .fillMaxSize()
+                        .edgeSwipeBack(onBack = { navController.popBackStack() })
+                ) {
+                    FamilyHistoryScreen(
+                        personId = id,
+                        personName = state.personById(id)?.name ?: id
+                    )
+                }
             }
         }
     }
