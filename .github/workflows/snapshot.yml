@@ -47,8 +47,29 @@ jobs:
             echo "airports.csv already present, skipping download"
           fi
 
+      # GEMINI_API_KEY / GEMINI_NEWS_MODEL feed classify_news_themes() in
+      # snapshot_worker.py — see that function's own doc comment. Both are
+      # optional: leave either repo secret unset and this step still runs
+      # exactly as before, just with no theme tags in this run's output
+      # (classify_news_themes() logs why and returns nulls rather than
+      # failing the pass). Add them under this repo's Settings -> Secrets
+      # and variables -> Actions -> New repository secret.
+      #
+      # Google's Gemini API free tier is what this is built against —
+      # genuinely free (no card on file, not a time-limited trial) with a
+      # daily request quota this app's actual volume (a handful of tracked
+      # people, refreshed every NEWS_EVERY passes — see that constant) sits
+      # comfortably under. Get a key at aistudio.google.com/apikey.
+      # GEMINI_NEWS_MODEL isn't actually sensitive (it's just a model name,
+      # e.g. whichever current Gemini Flash/Flash-Lite model is listed at
+      # ai.google.dev/gemini-api/docs/models under the free tier), but a
+      # secret is the simplest place to put it since it's already the
+      # mechanism this step needs for the real key.
       - name: Run snapshot_worker.py
         run: python3 backend/snapshot_worker.py
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          GEMINI_NEWS_MODEL: ${{ secrets.GEMINI_NEWS_MODEL }}
 
       - name: Publish to docs/ (what GitHub Pages serves)
         run: |
