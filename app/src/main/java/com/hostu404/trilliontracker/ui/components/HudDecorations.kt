@@ -25,6 +25,7 @@ import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.composed
@@ -524,6 +525,106 @@ private fun rubberBandPull(raw: Offset, maxPullPx: Float): Offset {
         return if (delta < 0f) -pulled else pulled
     }
     return Offset(axis(raw.x), axis(raw.y))
+}
+
+/**
+ * A left-edge swipe-to-go-back gesture, layered on top of Navigation
+ * Compose's own system-back handling rather than replacing it — the
+ * hardware back key, 3-button nav, and a real device's own OS-level edge
+ * gesture all keep working exactly as before through NavHost's automatic
+ * OnBackPressedDispatcher wiring; this only adds a second path to the same
+ * [onBack] call. It exists because that system gesture isn't always
+ * reachable in every place this app runs: the Android Studio emulator, in
+ * particular, can run in gesture-nav mode with no on-screen back affordance
+ * at all and no way to swipe in from outside its own window edge, which is
+ * exactly the "no back button visible" case that came up testing this app
+ * there. Applied per-screen at the [MainActivity] call sites for the two
+ * pushed destinations ("person/…", "familyHistory/…") — never the root
+ * "tracker" screen, which never had a back button either.
+ *
+ * Deliberately modeled on [rubberBandPhotoDrag]'s two safety rules, since
+ * that's this codebase's own already-proven answer to "how do we detect a
+ * deliberate gesture without stealing an ordinary one":
+ *  - Only a touch that goes down within [edgeWidth] of the left edge is
+ *    considered at all — a drag starting anywhere else on screen (the vast
+ *    majority of it) is completely untouched by this modifier, so normal
+ *    scrolling, tapping, and the profile-photo pull above are unaffected.
+ *  - Nothing is consumed until the finger has moved at least [activationSlop]
+ *    AND that movement is predominantly horizontal — every event before
+ *    that is left unconsumed, so a vertical scroll that happens to start in
+ *    the edge strip is still free to be claimed by the [LazyColumn]
+ *    underneath instead. If a descendant claims the gesture first (its
+ *    change arrives already consumed, which happens here before this
+ *    ancestor sees it — pointer events propagate leaf-to-root on the
+ *    default [PointerEventPass.Main] this uses), this backs off rather than
+ *    fighting over it.
+ * Once committed, [onBack] fires at most once per gesture — guarded by
+ * `fired` — the moment net rightward travel clears [activationSlop] plus
+ * [triggerDistance], rather than waiting for the finger to lift; an edge
+ * swipe should feel like it drives the transition, not like a delayed
+ * on-release action.
+ */
+fun Modifier.edgeSwipeBack(
+    enabled: Boolean = true,
+    edgeWidth: Dp = 24.dp,
+    activationSlop: Dp = 18.dp,
+    triggerDistance: Dp = 56.dp,
+    onBack: () -> Unit
+): Modifier = composed {
+    val edgeWidthPx = with(LocalDensity.current) { edgeWidth.toPx() }
+    val slopPx = with(LocalDensity.current) { activationSlop.toPx() }
+    val triggerPx = with(LocalDensity.current) { triggerDistance.toPx() }
+    val latestOnBack = rememberUpdatedState(onBack)
+
+    if (!enabled) {
+        this
+    } else {
+        this.pointerInput(edgeWidthPx, slopPx, triggerPx) {
+            awaitEachGesture {
+                val down = awaitFirstDown(requireUnconsumed = false)
+                if (down.position.x > edgeWidthPx) {
+                    return@awaitEachGesture
+                }
+                val pointerId = down.id
+                var sinceDown = Offset.Zero
+                var committed = false
+                var fired = false
+                while (true) {
+                    val event = awaitPointerEvent()
+                    val change = event.changes.firstOrNull { it.id == pointerId } ?: break
+                    if (!change.pressed) {
+                        if (committed) change.consume()
+                        break
+                    }
+                    if (!committed && change.isConsumed) {
+                        // Some descendant (a scrollable, another gesture)
+                        // already claimed this pointer — don't contest it.
+                        break
+                    }
+                    val delta = change.positionChange()
+                    if (!committed) {
+                        sinceDown += delta
+                        if (sinceDown.getDistance() > slopPx) {
+                            if (abs(sinceDown.x) > abs(sinceDown.y)) {
+                                committed = true
+                                change.consume()
+                            } else {
+                                // Predominantly vertical — leave it alone for
+                                // whatever scrollable sits underneath.
+                                break
+                            }
+                        }
+                    } else {
+                        change.consume()
+                        if (!fired && sinceDown.x > slopPx + triggerPx) {
+                            fired = true
+                            latestOnBack.value()
+                        }
+                    }
+                }
+            }
+        }
+    }
 }
 
 /**
