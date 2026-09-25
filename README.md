@@ -14,7 +14,6 @@ An Android app, built with Kotlin and Jetpack Compose, that tracks the world's r
 - **Time-by-location strip** — a chronological readout of how the tracked window splits across airports/ports, in-transit time, and signal gaps — one shared component for both flights and vessels.
 - **Biography** — birthdate (age computed live, never stored), city-level residence, a short sourced bio, a Wikipedia summary and free-license photo, and a link-out for social — nothing scraped or embedded live.
 - **News, with AI theme tags** — each person's latest headlines from free, keyless RSS, optionally classified by a free-tier Gemini call into a fixed set of themes (Markets & Wealth, Business & Deals, Legal & Regulatory, Technology & Innovation, Public Life & Controversy, Profile & Commentary, or Other). Fully opt-in — the app works identically with plain, untagged headlines if you skip the API key. A permanent lifetime tally per person shows what they tend to get covered for, across their whole tracked history.
-- **Gesture navigation** — swipe in from the left edge of any detail screen to go back, alongside the phone's own back button/gesture.
 - **Self-managing backend** — every time series (prices, flight/vessel history, the trillionaire-crossing log) trims itself to a real rolling 7 days automatically, so the data and the repo it lives in stay flat-sized forever.
 
 ## Why is Trillionaire Tracker?

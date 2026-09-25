@@ -40,6 +40,7 @@ import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -2204,13 +2205,54 @@ private fun NewsRow(item: NewsItem, nowSeconds: Long) {
             .border(1.dp, TT.border, TT.panelShape(12.dp))
             .padding(14.dp)
     ) {
-        Text(text = item.title, color = TT.inkPrimary, fontSize = 14.sp)
+        // Capped rather than left to wrap freely (2026-09-25): a defensive
+        // backstop, not a fix for anything actually reproduced — a real
+        // embedded line break was one of the first theories chased for the
+        // blank-card bug below and was ruled out (every title, live-polled
+        // or backend-cached, came back clean down to the byte). Still worth
+        // keeping: a card that can never grow past a few lines regardless of
+        // what's actually inside [item.title] costs nothing and forecloses
+        // that entire failure mode for whatever the next syndication feed's
+        // formatting surprise turns out to be.
+        Text(
+            text = item.title,
+            color = TT.inkPrimary,
+            fontSize = 14.sp,
+            maxLines = 4,
+            overflow = TextOverflow.Ellipsis
+        )
         Spacer(Modifier.height(4.dp))
         Row(verticalAlignment = Alignment.CenterVertically) {
+            // The actual bug (2026-09-25, found by measuring the live layout
+            // directly rather than guessing from title content): this Text
+            // had no weight, so as the Row's first (unweighted) child it
+            // always claimed the Row's FULL available width for its own
+            // layout bounds, regardless of whether it visually needed that
+            // much. Fine for an ordinary short source name — there's still
+            // plenty of width left for [NoteChip] either way — but
+            // "FashionNetwork - The World's Fashion Business News" (50
+            // characters; every other source in this list is under 25) ran
+            // this text's reserved width out to the Row's own width, leaving
+            // the chip after it with effectively zero space. "Business &
+            // Deals" then wrapped into dozens of near-zero-width lines
+            // trying to fit there, measuring well over 1000px tall and
+            // dragging the whole card down with it — a card-height bug that
+            // was actually a width-starvation bug on its sibling.
+            // `weight(1f, fill = false)` makes this the flexible side of the
+            // row instead of the greedy one: Compose measures the
+            // unweighted [NoteChip] first, at its own natural size, and only
+            // gives this text whatever's left — so the chip can never be
+            // squeezed again regardless of how long a future outlet's name
+            // turns out to be. `maxLines = 1` keeps this line from wrapping
+            // even when it does end up with less room than it wants,
+            // trailing with `…` instead.
             Text(
                 text = "${item.source} · ${Format.agoShort(item.publishedEpoch, nowSeconds)}",
                 color = TT.inkMuted,
-                fontSize = 11.sp
+                fontSize = 11.sp,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f, fill = false)
             )
             // Null whenever classify_news_themes() didn't run this pass (no
             // GEMINI_API_KEY/GEMINI_NEWS_MODEL configured, or the call
