@@ -29,6 +29,24 @@ object GoogleNewsClient {
     private const val USER_AGENT = "trillionaire-tracker/0.1 (+https://github.com/Hostu404)"
 
     /**
+     * Mirrors `NEWS_FETCH_LIMIT` in snapshot_worker.py — kept at the same
+     * number so this live, client-side poll and the backend's own tracked
+     * window cover the same stories. They used to drift (this defaulted to
+     * 4 while the backend also fetched 4, which sounds aligned but wasn't
+     * the point — see [fetchNews]'s doc comment): a story could sit just
+     * outside the backend's window at the moment it fetched, while this
+     * live poll — running independently, whenever someone actually opens
+     * this screen — caught it. That headline would show with no theme
+     * chip, not because classification failed, but because the backend
+     * never saw it to classify at all. Raising both windows to the same
+     * larger number doesn't fully close that gap (the two fetches still
+     * happen at different times), but it shrinks it a lot, for free — this
+     * request is keyless RSS either way, so a larger limit costs nothing
+     * extra here.
+     */
+    private const val DEFAULT_NEWS_LIMIT = 8
+
+    /**
      * [query] is used exactly as `fetch_news()` uses it server-side — quoted
      * as an exact phrase, not split into keywords — so this should be
      * called with a person's actual name, same as
@@ -38,7 +56,7 @@ object GoogleNewsClient {
      * "no current data, not an error" contract as every other live client
      * in this file.
      */
-    suspend fun fetchNews(query: String, limit: Int = 4): List<NewsItem> {
+    suspend fun fetchNews(query: String, limit: Int = DEFAULT_NEWS_LIMIT): List<NewsItem> {
         if (query.isBlank()) return emptyList()
         val encoded = URLEncoder.encode("\"$query\"", "UTF-8")
         val request = Request.Builder()

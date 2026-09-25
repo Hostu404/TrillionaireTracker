@@ -105,6 +105,26 @@ TIMEOUT = 15
 # (fast, keyless, non-AI) request in this file, which all use TIMEOUT above.
 GEMINI_TIMEOUT = 30
 
+# How many of a person's top Google News results fetch_news() keeps (and,
+# downstream, how many classify_news_themes() ever has to consider for that
+# person). Raising this is free on the RSS side — fetch_news() is
+# free/keyless regardless of how many <item> nodes it reads out of one
+# response — and it's cheap on the Gemini side too, for a reason worth
+# spelling out: build_snapshot()'s call site already batches every new
+# headline for a person into ONE classify_news_themes() call, and already
+# only sends titles this person's previous cache doesn't already have a
+# theme for (see that call site's own comment). So this number controls
+# prompt SIZE (a few more short lines in an already-tiny numbered list) —
+# not request COUNT, which is what actually counts against Gemini's free-
+# tier daily/per-minute caps. Doubled from the original 4 to 8 so a story
+# that's still genuinely current doesn't fall out of the tracked window
+# just because a couple of fresher headlines briefly outranked it — and so
+# the backend's own window covers more of what a person's live, client-side
+# poll can surface (see GoogleNewsClient.fetchNews on the client, kept at
+# the same number for that reason), which had been quietly missing
+# real, classifiable stories that never crossed the old top-4 cutoff.
+NEWS_FETCH_LIMIT = 8
+
 HERE = os.path.dirname(os.path.abspath(__file__))
 HOLDINGS_PATH = os.path.join(HERE, "holdings.json")
 STATE_PATH = os.path.join(HERE, "state.json")
@@ -1833,7 +1853,7 @@ def vessel_status(
 # ---------------------------------------------------------------- news
 
 
-def fetch_news(query: str, limit: int = 4) -> list[dict]:
+def fetch_news(query: str, limit: int = NEWS_FETCH_LIMIT) -> list[dict]:
     url = (
         "https://news.google.com/rss/search?q="
         + urllib.parse.quote(f'"{query}"')
@@ -1932,7 +1952,7 @@ def accumulate_lifetime_news_themes(
     legitimately keep reappearing in fetch_news()'s top results across many
     refresh cycles while a story stays current. Without that dedup, one
     sufficiently persistent story would silently dominate this tally just by
-    staying in the top 4 for a long time — turning "what kinds of things get
+    staying in the top NEWS_FETCH_LIMIT results for a long time — turning "what kinds of things get
     written about this person, over their whole tracked history" into "what
     has been the top story lately", which isn't what a lifetime figure is
     for. `newsThemeSeenTitles` is what makes that dedup possible; like
