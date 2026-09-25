@@ -503,5 +503,28 @@ data class NewsItem(
     val title: String,
     val source: String,
     val url: String,
-    val publishedEpoch: Long
+    val publishedEpoch: Long,
+    /**
+     * One of a fixed set of theme labels ("Markets & Wealth", "Business &
+     * Deals", "Legal & Regulatory", "Technology & Innovation", "Public Life
+     * & Controversy", "Other") — see `classify_news_themes()` and
+     * `NEWS_THEMES` in snapshot_worker.py for the taxonomy and how a
+     * headline gets sorted into it (a Google Gemini API call, backend-side
+     * only — this app has no on-device classification and never ships an
+     * API key to the client). Rendered as a small colored tag next to the
+     * headline in [com.hostu404.trilliontracker.ui.screens] — see
+     * `newsThemeColor` there for the theme -> color mapping.
+     *
+     * Null in two ordinary, non-error situations, not just when something's
+     * gone wrong: the backend classifier isn't configured or its call
+     * failed for this pass (no GEMINI_API_KEY/GEMINI_NEWS_MODEL set,
+     * a network error, and so on — classify_news_themes() never throws, it
+     * just returns nulls), or this particular [NewsItem] came from the
+     * client's own live RSS poll (GoogleNewsClient) rather than the backend
+     * snapshot — live-polled headlines are never classified, since doing
+     * that would mean putting the Gemini API key in the shipped app,
+     * which this app deliberately never does for any secret. Either way,
+     * the UI's response is the same: no tag shown, not a placeholder one.
+     */
+    val theme: String? = null
 )
