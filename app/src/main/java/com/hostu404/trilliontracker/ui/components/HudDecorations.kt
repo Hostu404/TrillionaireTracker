@@ -70,33 +70,42 @@ import kotlin.math.sqrt
  * on every card it would read as noise, which is exactly the "too
  * distracting" failure mode this whole treatment is meant to avoid.
  */
+// Lint's UnnecessaryComposedModifier check flagged the composed { } this
+// used to be wrapped in: composed exists to let a Modifier factory call
+// @Composable functions (remember, LocalContext.current, and the like) to
+// build instance-specific state, but drawWithContent below never does
+// that — every value it reads is a plain parameter, not composition
+// state — so the wrapper bought nothing here except making this modifier
+// non-skippable (composed forces Compose to re-evaluate and re-allocate
+// the whole modifier chain on every recomposition, instead of reusing the
+// same Modifier instance when nothing it depends on changed). Returning
+// drawWithContent directly is the same visual result at strictly lower
+// cost.
 fun Modifier.hudCorners(
     color: Color = TT.accentCyan,
     length: Dp = 9.dp,
     inset: Dp = 3.dp,
     strokeWidth: Dp = 1.5.dp
-): Modifier = composed {
-    drawWithContent {
-        drawContent()
-        val len = length.toPx()
-        val gap = inset.toPx()
-        val strokeW = strokeWidth.toPx()
-        val w = size.width
-        val h = size.height
+): Modifier = drawWithContent {
+    drawContent()
+    val len = length.toPx()
+    val gap = inset.toPx()
+    val strokeW = strokeWidth.toPx()
+    val w = size.width
+    val h = size.height
 
-        // top-left
-        drawLine(color, Offset(gap, gap + len), Offset(gap, gap), strokeWidth = strokeW)
-        drawLine(color, Offset(gap, gap), Offset(gap + len, gap), strokeWidth = strokeW)
-        // top-right
-        drawLine(color, Offset(w - gap - len, gap), Offset(w - gap, gap), strokeWidth = strokeW)
-        drawLine(color, Offset(w - gap, gap), Offset(w - gap, gap + len), strokeWidth = strokeW)
-        // bottom-left
-        drawLine(color, Offset(gap, h - gap - len), Offset(gap, h - gap), strokeWidth = strokeW)
-        drawLine(color, Offset(gap, h - gap), Offset(gap + len, h - gap), strokeWidth = strokeW)
-        // bottom-right
-        drawLine(color, Offset(w - gap - len, h - gap), Offset(w - gap, h - gap), strokeWidth = strokeW)
-        drawLine(color, Offset(w - gap, h - gap - len), Offset(w - gap, h - gap), strokeWidth = strokeW)
-    }
+    // top-left
+    drawLine(color, Offset(gap, gap + len), Offset(gap, gap), strokeWidth = strokeW)
+    drawLine(color, Offset(gap, gap), Offset(gap + len, gap), strokeWidth = strokeW)
+    // top-right
+    drawLine(color, Offset(w - gap - len, gap), Offset(w - gap, gap), strokeWidth = strokeW)
+    drawLine(color, Offset(w - gap, gap), Offset(w - gap, gap + len), strokeWidth = strokeW)
+    // bottom-left
+    drawLine(color, Offset(gap, h - gap - len), Offset(gap, h - gap), strokeWidth = strokeW)
+    drawLine(color, Offset(gap, h - gap), Offset(gap + len, h - gap), strokeWidth = strokeW)
+    // bottom-right
+    drawLine(color, Offset(w - gap - len, h - gap), Offset(w - gap, h - gap), strokeWidth = strokeW)
+    drawLine(color, Offset(w - gap, h - gap - len), Offset(w - gap, h - gap), strokeWidth = strokeW)
 }
 
 /**
