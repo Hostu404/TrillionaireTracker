@@ -347,6 +347,20 @@ fun PersonDetailScreen(
                 }
             }
 
+            run {
+                // Same "only if there's something to show" gate as the 7-day
+                // card above, just keyed on lifetimeLocations instead of
+                // trackedSeconds — a person can have a nonzero 7-day tracked
+                // window (a plane/boat that's simply never been matched to a
+                // named airport/port yet) with nothing real to put in this
+                // card at all.
+                val flight = person.flight?.takeIf { it.lifetimeLocations.isNotEmpty() }
+                val vessel = person.vessel?.takeIf { it.lifetimeLocations.isNotEmpty() }
+                if (flight != null || vessel != null) {
+                    item { LifetimeLocationsCard(flight, vessel, nowSeconds, airports, ports) }
+                }
+            }
+
             person.flight?.recentStops?.takeIf { it.isNotEmpty() }?.let { stops ->
                 item { LocationHistoryCard(stops, nowSeconds, airports) }
             }
@@ -1273,6 +1287,99 @@ private fun PortHistoryCard(stops: List<PortStop>, nowSeconds: Long, ports: Map<
             if (index != stops.lastIndex) {
                 Spacer(Modifier.height(8.dp))
             }
+        }
+    }
+}
+
+/**
+ * All-time counterpart to [TimeByLocationCard] — a specific airport/port's
+ * running total that never resets or ages out the way the 7-day breakdown
+ * above does (see [FlightStatus.lifetimeLocations]/[VesselStatus.lifetimeLocations]
+ * and snapshot_worker.py's "lifetime tally" blocks for how it's
+ * accumulated). Reuses the same stacked "Plane"/"Boat" framing as
+ * [TimeByLocationCard] so a person tracked on both keeps one consistent card
+ * style instead of two rival designs. Either half is left out entirely when
+ * that side has no confirmed location yet, same as [TimeByLocationCard].
+ */
+@Composable
+private fun LifetimeLocationsCard(
+    flight: FlightStatus?,
+    vessel: VesselStatus?,
+    nowSeconds: Long,
+    airports: Map<String, AirportInfo>,
+    ports: Map<String, PortInfo>
+) {
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .background(TT.surface, TT.panelShape(14.dp))
+            .border(1.dp, TT.border, TT.panelShape(14.dp))
+            .padding(14.dp)
+    ) {
+        SectionLabel(text = "ALL-TIME LOCATIONS")
+
+        if (flight != null) {
+            Spacer(Modifier.height(10.dp))
+            Text(text = "Plane", color = TT.inkSecondary, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+            Spacer(Modifier.height(6.dp))
+            flight.lifetimeLocations.forEachIndexed { index, loc ->
+                LifetimeLocationRow(
+                    label = airports[loc.location]?.label ?: loc.location,
+                    totalSeconds = loc.totalSeconds,
+                    lastSeenEpoch = loc.lastSeenEpoch,
+                    nowSeconds = nowSeconds
+                )
+                if (index != flight.lifetimeLocations.lastIndex) {
+                    Spacer(Modifier.height(8.dp))
+                }
+            }
+        }
+
+        if (vessel != null) {
+            Spacer(Modifier.height(if (flight != null) 16.dp else 10.dp))
+            Text(text = "Boat", color = TT.inkSecondary, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+            Spacer(Modifier.height(6.dp))
+            vessel.lifetimeLocations.forEachIndexed { index, loc ->
+                LifetimeLocationRow(
+                    label = ports[loc.location]?.label ?: loc.location,
+                    totalSeconds = loc.totalSeconds,
+                    lastSeenEpoch = loc.lastSeenEpoch,
+                    nowSeconds = nowSeconds
+                )
+                if (index != vessel.lifetimeLocations.lastIndex) {
+                    Spacer(Modifier.height(8.dp))
+                }
+            }
+        }
+    }
+}
+
+/** One row inside [LifetimeLocationsCard] — a place name plus its running lifetime total. */
+@Composable
+private fun LifetimeLocationRow(label: String, totalSeconds: Long, lastSeenEpoch: Long, nowSeconds: Long) {
+    Row(
+        Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(
+            text = label,
+            color = TT.inkPrimary,
+            fontSize = 14.sp,
+            fontWeight = FontWeight.Medium,
+            modifier = Modifier.weight(1f)
+        )
+        Column(horizontalAlignment = Alignment.End) {
+            Text(
+                text = Format.duration(totalSeconds),
+                color = TT.inkPrimary,
+                fontSize = 13.sp,
+                fontWeight = FontWeight.Medium
+            )
+            Text(
+                text = "last ${Format.agoShort(lastSeenEpoch, nowSeconds)}",
+                color = TT.inkMuted,
+                fontSize = 11.sp
+            )
         }
     }
 }

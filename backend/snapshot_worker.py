@@ -55,6 +55,15 @@ from typing import Any
 
 HISTORY_WINDOW_SECONDS = 7 * 86_400   # every self-managed series in this file trims to this
 
+# Buckets flight_status()/vessel_status() can assign that do NOT name a
+# specific place — everything else either function puts in `bucket` is a
+# real airport ICAO ident or port UN/LOCODE. Used to keep the permanent
+# lifetime-location tally (see flight_status()'s "lifetime tally" block)
+# from ever accumulating time against "in flight"/"no signal"/etc. as if
+# those were places someone visited.
+NON_LOCATION_FLIGHT_BUCKETS = {"IN_FLIGHT", "UNKNOWN_AIRPORT", "NO_SIGNAL", "SIGNAL_LOST"}
+NON_LOCATION_VESSEL_BUCKETS = {"UNDERWAY", "UNKNOWN_PORT", "NO_SIGNAL", "SIGNAL_LOST"}
+
 # How long flight_status() keeps assuming "still on the same flight" after
 # ADS-B goes quiet mid-air, before admitting it's lost the plot. Two
 # different triggers, because they answer two different questions:
@@ -809,7 +818,14 @@ def fetch_aircraft(icao_hex: str, tail: str | None = None) -> dict | None:
     return None
 
 
-def flight_status(subject: Subject, prev: dict, airports, countries, now: int) -> dict | None:
+def flight_status(
+    subject: Subject,
+    prev: dict,
+    airports,
+    countries,
+    now: int,
+    lifetime_airports: dict | None = None,
+) -> dict | None:
     """
     - state and departure are live, straight off ADS-B
     - arrival is filled in once the aircraft is on the ground — that's the
@@ -993,6 +1009,41 @@ def flight_status(subject: Subject, prev: dict, airports, countries, now: int) -
     )
     # ----------------------------------------------------------------------
 
+    # --- lifetime tally (never pruned) -------------------------------------
+    # A permanent counterpart to location_breakdown above, alongside the
+    # existing 7-day view rather than instead of it. `samples`/`kept` get
+    # rewritten every pass, trimmed to HISTORY_WINDOW_SECONDS — accumulating
+    # from them here would mean re-deriving history that's already been
+    # thrown away. Instead this keeps its own tiny cursor (the bucket and
+    # timestamp as of the *previous* call) independent of the 7-day
+    # machinery, and folds the elapsed real time between then and now into
+    # whichever real airport was active over that interval, the moment this
+    # pass's bucket is computed. Only real airports accumulate — see
+    # NON_LOCATION_FLIGHT_BUCKETS — so "in flight"/"no signal"/"signal lost"
+    # time never gets misattributed to a place. Keyed by subject.id (not
+    # icao_hex) at the build_snapshot() call site, so it survives even a
+    # tail/aircraft swap: a "lifetime" figure that reset every time someone
+    # chartered a different plane would defeat the point of calling it that.
+    if lifetime_airports is not None:
+        prev_bucket = memory.get("lifetime_cursor_bucket")
+        prev_t = memory.get("lifetime_cursor_t")
+        if (
+            prev_bucket is not None
+            and prev_bucket not in NON_LOCATION_FLIGHT_BUCKETS
+            and prev_t is not None
+            and now > prev_t
+        ):
+            entry = lifetime_airports.setdefault(
+                prev_bucket,
+                {"totalSeconds": 0, "firstSeenEpoch": prev_t, "lastSeenEpoch": prev_t},
+            )
+            entry["totalSeconds"] += now - prev_t
+            entry["lastSeenEpoch"] = now
+        if bucket != "NO_SIGNAL":
+            memory["lifetime_cursor_bucket"] = bucket
+            memory["lifetime_cursor_t"] = now
+    # ----------------------------------------------------------------------
+
     if state != "UNKNOWN":
         memory["state"] = state
         memory["last_seen"] = now
@@ -1083,6 +1134,25 @@ def flight_status(subject: Subject, prev: dict, airports, countries, now: int) -
         # on) — the client should fall back to an unspecified "possibly
         # landed" in that case rather than treating None as an error.
         "probableIcao": memory.get("last_airborne_estimate_icao") if bucket == "SIGNAL_LOST" else None,
+        # Permanent, never-pruned counterpart to locationBreakdown — see the
+        # "lifetime tally" block above for how this accumulates. `location`
+        # is shared with VesselStatus.lifetimeLocations (an ICAO here, a
+        # UN/LOCODE there) since nothing else about the shape differs. Empty
+        # whenever this pass was called with lifetime_airports=None (not
+        # currently expected in production, but keeps this function callable
+        # standalone, e.g. from a test, without a lifetime store on hand).
+        "lifetimeLocations": sorted(
+            (
+                {
+                    "location": icao,
+                    "totalSeconds": v["totalSeconds"],
+                    "firstSeenEpoch": v["firstSeenEpoch"],
+                    "lastSeenEpoch": v["lastSeenEpoch"],
+                }
+                for icao, v in (lifetime_airports or {}).items()
+            ),
+            key=lambda x: -x["totalSeconds"],
+        ),
     }
 
 
@@ -1356,7 +1426,15 @@ def read_ais_cache() -> dict:
         return {}
 
 
-def vessel_status(subject: Subject, prev: dict, ports, ais_cache: dict, countries, now: int) -> dict | None:
+def vessel_status(
+    subject: Subject,
+    prev: dict,
+    ports,
+    ais_cache: dict,
+    countries,
+    now: int,
+    lifetime_ports: dict | None = None,
+) -> dict | None:
     """
     The maritime mirror of flight_status() — see VesselStatus in Models.kt
     for the privacy rationale (port granularity only, self-reported
@@ -1552,6 +1630,34 @@ def vessel_status(subject: Subject, prev: dict, ports, ais_cache: dict, countrie
     )
     # ----------------------------------------------------------------------
 
+    # --- lifetime tally (never pruned) -------------------------------------
+    # Exact mirror of flight_status()'s version above — same cursor-based
+    # accumulation, same reasoning (samples/kept get rewritten every pass,
+    # trimmed to HISTORY_WINDOW_SECONDS, so this deliberately doesn't derive
+    # from them). Only real ports accumulate — see NON_LOCATION_VESSEL_BUCKETS
+    # — so "underway"/"no signal"/"signal lost" time never gets misattributed
+    # to a place. Keyed by subject.id at the build_snapshot() call site, same
+    # as the flight side, so it survives even if a vessel's MMSI ever changed.
+    if lifetime_ports is not None:
+        prev_bucket = memory.get("lifetime_cursor_bucket")
+        prev_t = memory.get("lifetime_cursor_t")
+        if (
+            prev_bucket is not None
+            and prev_bucket not in NON_LOCATION_VESSEL_BUCKETS
+            and prev_t is not None
+            and now > prev_t
+        ):
+            entry = lifetime_ports.setdefault(
+                prev_bucket,
+                {"totalSeconds": 0, "firstSeenEpoch": prev_t, "lastSeenEpoch": prev_t},
+            )
+            entry["totalSeconds"] += now - prev_t
+            entry["lastSeenEpoch"] = now
+        if bucket != "NO_SIGNAL":
+            memory["lifetime_cursor_bucket"] = bucket
+            memory["lifetime_cursor_t"] = now
+    # ----------------------------------------------------------------------
+
     if state != "UNKNOWN":
         memory["state"] = state
         memory["last_seen"] = now
@@ -1665,6 +1771,23 @@ def vessel_status(subject: Subject, prev: dict, ports, ais_cache: dict, countrie
         # on) — the client should fall back to an unspecified "possibly
         # near — unclear" in that case rather than treating None as an error.
         "probablePortUnlocode": memory.get("last_underway_estimate_port") if bucket == "SIGNAL_LOST" else None,
+        # Permanent, never-pruned counterpart to locationBreakdown — the
+        # maritime mirror of FlightStatus.lifetimeLocations, see the
+        # "lifetime tally" block above for how this accumulates. `location`
+        # holds a UN/LOCODE here (an ICAO on the flight side) — same shared
+        # shape as FlightStatus.lifetimeLocations otherwise.
+        "lifetimeLocations": sorted(
+            (
+                {
+                    "location": unlocode,
+                    "totalSeconds": v["totalSeconds"],
+                    "firstSeenEpoch": v["firstSeenEpoch"],
+                    "lastSeenEpoch": v["lastSeenEpoch"],
+                }
+                for unlocode, v in (lifetime_ports or {}).items()
+            ),
+            key=lambda x: -x["totalSeconds"],
+        ),
     }
 
 
@@ -1931,14 +2054,35 @@ def build_snapshot() -> dict:
             elapsed = max(1, now - prev_t)
             drift = (value - prev_value) / float(elapsed)
 
+            # Permanent per-person lifetime store — keyed by subject.id (not
+            # icao_hex/mmsi) precisely so it survives a tail/vessel swap; see
+            # flight_status()/vessel_status()'s "lifetime tally" comments.
+            # Never pruned/cleared anywhere, unlike "flights"/"vessels" above.
+            lifetime_entry = state.setdefault("lifetime", {}).setdefault(subject.id, {})
+
             if passes % FLIGHT_EVERY == 0:
-                flight = flight_status(subject, state.setdefault("flights", {}), airports, countries, now)
+                flight = flight_status(
+                    subject,
+                    state.setdefault("flights", {}),
+                    airports,
+                    countries,
+                    now,
+                    lifetime_airports=lifetime_entry.setdefault("airports", {}),
+                )
                 state.setdefault("flight_payload", {})[subject.id] = flight
             else:
                 flight = state.get("flight_payload", {}).get(subject.id)
 
             if passes % VESSEL_EVERY == 0:
-                vessel = vessel_status(subject, state.setdefault("vessels", {}), ports, ais_cache, countries, now)
+                vessel = vessel_status(
+                    subject,
+                    state.setdefault("vessels", {}),
+                    ports,
+                    ais_cache,
+                    countries,
+                    now,
+                    lifetime_ports=lifetime_entry.setdefault("ports", {}),
+                )
                 state.setdefault("vessel_payload", {})[subject.id] = vessel
             else:
                 vessel = state.get("vessel_payload", {}).get(subject.id)
