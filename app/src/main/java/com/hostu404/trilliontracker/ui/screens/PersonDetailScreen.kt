@@ -53,6 +53,7 @@ import com.hostu404.trilliontracker.data.GoogleNewsClient
 import com.hostu404.trilliontracker.data.LivePosition
 import com.hostu404.trilliontracker.data.NetWorthEngine
 import com.hostu404.trilliontracker.data.NewsItem
+import com.hostu404.trilliontracker.data.NewsThemeShare
 import com.hostu404.trilliontracker.data.LiveFlightTracker
 import com.hostu404.trilliontracker.data.Person
 import com.hostu404.trilliontracker.data.PortInfo
@@ -359,6 +360,10 @@ fun PersonDetailScreen(
                 if (flight != null || vessel != null) {
                     item { LifetimeLocationsCard(flight, vessel, nowSeconds, airports, ports) }
                 }
+            }
+
+            person.lifetimeNewsThemes.takeIf { it.isNotEmpty() }?.let { themes ->
+                item { LifetimeNewsThemesCard(themes) }
             }
 
             person.flight?.recentStops?.takeIf { it.isNotEmpty() }?.let { stops ->
@@ -1385,6 +1390,76 @@ private fun LifetimeLocationRow(label: String, totalSeconds: Long, lastSeenEpoch
 }
 
 /**
+ * All-time counterpart to the per-headline theme chips in "IN THE NEWS" —
+ * how many distinct headlines have ever been classified into each theme for
+ * this person, permanently (see [Person.lifetimeNewsThemes] and
+ * snapshot_worker.py's `accumulate_lifetime_news_themes()` for exactly how
+ * this accumulates, and why it's a count of distinct headlines rather than a
+ * count of classification passes). [newsThemeColor] keeps each bar's color
+ * consistent with that same theme's per-headline chip. Bar width is relative
+ * to this person's own largest theme, not a fixed/shared scale across
+ * people — the point of this card is "what does this person mostly get
+ * covered for", not a cross-person comparison.
+ *
+ * Left out of the screen entirely (see the call site) when
+ * [Person.lifetimeNewsThemes] is empty — nothing classified yet for this
+ * person, same "absent, not a zeroed-out placeholder" treatment as
+ * [LifetimeLocationsCard]'s flight/vessel halves.
+ */
+@Composable
+private fun LifetimeNewsThemesCard(themes: List<NewsThemeShare>) {
+    val maxCount = themes.maxOf { it.count }
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .background(TT.surface, TT.panelShape(14.dp))
+            .border(1.dp, TT.border, TT.panelShape(14.dp))
+            .padding(14.dp)
+    ) {
+        SectionLabel(text = "ALL-TIME NEWS THEMES")
+        Spacer(Modifier.height(10.dp))
+        themes.forEachIndexed { index, share ->
+            LifetimeNewsThemeRow(share = share, maxCount = maxCount)
+            if (index != themes.lastIndex) {
+                Spacer(Modifier.height(10.dp))
+            }
+        }
+    }
+}
+
+/** One row inside [LifetimeNewsThemesCard] — a theme name, its all-time count, and a proportional bar. */
+@Composable
+private fun LifetimeNewsThemeRow(share: NewsThemeShare, maxCount: Int) {
+    val color = newsThemeColor(share.theme)
+    Column(Modifier.fillMaxWidth()) {
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                text = share.theme,
+                color = TT.inkPrimary,
+                fontSize = 13.sp,
+                fontWeight = FontWeight.Medium,
+                modifier = Modifier.weight(1f)
+            )
+            Text(text = share.count.toString(), color = TT.inkMuted, fontSize = 12.sp)
+        }
+        Spacer(Modifier.height(4.dp))
+        Box(
+            Modifier
+                .fillMaxWidth()
+                .height(6.dp)
+                .background(TT.border, TT.panelShape(3.dp))
+        ) {
+            Box(
+                Modifier
+                    .fillMaxWidth(fraction = share.count.toFloat() / maxCount.toFloat())
+                    .height(6.dp)
+                    .background(color, TT.panelShape(3.dp))
+            )
+        }
+    }
+}
+
+/**
  * The map's plane pin, built entirely from fields already shown as text on
  * [FlightCard] — never a new position source. Solid/live only when the
  * aircraft is actually on the ground right now; airborne or no-signal falls
@@ -1477,7 +1552,29 @@ private fun rememberLiveNews(query: String, seedNews: List<NewsItem>): List<News
         }
     }.value
 
-    return live.ifEmpty { seedNews }
+    if (live.isEmpty()) return seedNews
+
+    // [live] is this device's own on-the-spot RSS poll — fresher than
+    // [seedNews] (the backend snapshot, which only refreshes a given
+    // person's news roughly every NEWS_EVERY passes — see
+    // snapshot_worker.py), but never carries a theme tag, by design: theme
+    // classification needs the Gemini API key, and that key only ever lives
+    // backend-side (see NewsItem.theme's doc comment). Rather than pick one
+    // of "fresh" or "themed", carry a theme over onto a live headline
+    // whenever the exact same headline is also sitting in [seedNews] — both
+    // are the same Google News RSS query (see GoogleNewsClient.fetchNews's
+    // doc comment), just polled at different times, so a headline both
+    // sides have seen carries the identical title text. A brand-new
+    // headline the backend hasn't picked up and classified yet simply has
+    // no match here and shows no tag, same as always, until the backend's
+    // own next pass catches up to it.
+    //
+    // Title, not url, is the match key: Google News' RSS links embed a
+    // per-fetch token, so the same article's url can differ between this
+    // device's poll and the backend's — title text for a given article is
+    // the only field guaranteed stable across two separate fetches.
+    val themeByTitle = seedNews.mapNotNull { item -> item.theme?.let { theme -> item.title to theme } }.toMap()
+    return live.map { item -> themeByTitle[item.title]?.let { theme -> item.copy(theme = theme) } ?: item }
 }
 
 private const val LIVE_NEWS_POLL_MILLIS = 5 * 60_000L

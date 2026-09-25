@@ -176,6 +176,19 @@ data class Person(
      */
     val news: List<NewsItem> = emptyList(),
     /**
+     * Permanent, never-pruned count of how many DISTINCT headlines have ever
+     * been classified into each of `NEWS_THEMES`'s fixed themes for this
+     * person — see snapshot_worker.py's `accumulate_lifetime_news_themes()`
+     * for exactly how this accumulates (same "lifetime tally" idea as
+     * [FlightStatus.lifetimeLocations]/[VesselStatus.lifetimeLocations], just
+     * for news themes instead of places). Empty until this person's news has
+     * been classified at least once — same "absent, not zero" convention as
+     * [NewsItem.theme] itself — and only ever grows from there. Sorted by
+     * [NewsThemeShare.count] descending, same convention as
+     * [FlightStatus.lifetimeLocations].
+     */
+    val lifetimeNewsThemes: List<NewsThemeShare> = emptyList(),
+    /**
      * Link to the person's profile on whatever platform they actually post to
      * (X, Bluesky, wherever). We link out rather than embedding — pulling live
      * posts would mean a metered per-read API bill that scales with users,
@@ -527,4 +540,17 @@ data class NewsItem(
      * the UI's response is the same: no tag shown, not a placeholder one.
      */
     val theme: String? = null
+)
+
+/**
+ * One entry in [Person.lifetimeNewsThemes] — how many distinct headlines
+ * have ever been classified as [theme] for this person, permanently. See
+ * snapshot_worker.py's `accumulate_lifetime_news_themes()` for exactly how
+ * [count] accumulates and why it's a count of distinct headlines rather
+ * than a count of classification passes.
+ */
+@Serializable
+data class NewsThemeShare(
+    val theme: String,
+    val count: Int
 )
