@@ -92,7 +92,6 @@ import com.hostu404.trilliontracker.ui.theme.TT
 fun PersonDetailScreen(
     personId: String,
     state: TrackerUiState,
-    onBack: () -> Unit,
     onOpenFamilyHistory: (String) -> Unit
 ) {
     val person = state.personById(personId)
@@ -185,8 +184,7 @@ fun PersonDetailScreen(
                     // lights up, this is where they land expecting to see it
                     // confirmed.
                     isAirborneNow = person.flight?.state == FlightState.AIRBORNE,
-                    isUnderwayNow = person.vessel?.state == VesselState.UNDERWAY,
-                    onBack = onBack
+                    isUnderwayNow = person.vessel?.state == VesselState.UNDERWAY
                 )
             }
 
@@ -411,17 +409,17 @@ private fun townMapUrl(residence: String): String {
  * design element in its own right, so it is never drawn without a photo
  * underneath needing it. Lines that used to be their own row (age/birth,
  * residence, Wikipedia) are compacted onto shared rows so the banner's own
- * height buys back space rather than spending it. The back button lives
- * inside this banner too now — tucked into its own top-left corner using
- * the same [TT.panelShape] chamfer the banner itself is clipped to, rather
- * than sitting above it as a separate row that only added empty space.
- * [socialUrl] mirrors that same treatment in the top-right corner — moved
+ * height buys back space rather than spending it. [socialUrl] lives inside
+ * this banner too — tucked into its own top-right corner using the same
+ * [TT.panelShape] chamfer the banner itself is clipped to, rather than
+ * sitting above it as a separate row that only added empty space — moved
  * off the end of [BiographyCard] so a profile's link-out sits with the rest
- * of its identity (photo, name, back button) instead of several cards
- * further down the screen. It needs the same dark chip [onBack] already
- * uses, not [BiographyCard]'s old bare-glyph treatment, because it now has
- * to stay legible over an arbitrary photo instead of this app's own
- * surface color.
+ * of its identity (photo, name) instead of several cards further down the
+ * screen. It uses a translucent-black chip (the same style this banner's
+ * old top-left back button used, before that button was removed 2026-09-24
+ * as redundant against the phone's own system back), not [BiographyCard]'s
+ * old bare-glyph treatment, because it has to stay legible over an
+ * arbitrary photo instead of this app's own surface color.
  */
 /**
  * Renders [text] with a thin black outline behind the normal fill —
@@ -487,8 +485,7 @@ private fun PersonHeader(
     residence: String?,
     socialUrl: String?,
     isAirborneNow: Boolean,
-    isUnderwayNow: Boolean,
-    onBack: () -> Unit
+    isUnderwayNow: Boolean
 ) {
     val uriHandler = LocalUriHandler.current
     val age = birthDate?.let { Format.ageFrom(it) }
@@ -708,42 +705,17 @@ private fun PersonHeader(
             }
         }
 
-        // Briefly reshaped on 2026-09-24 to nest into the banner's own
-        // 14dp chamfer (matching the photo's own clip exactly); reverted
-        // the same day back to FamilyHistoryScreen's original back-button
-        // chip instead — its 10dp cut, "← Back" text, and lack of a drop
-        // shadow was the design worth keeping, so this button now matches
-        // THAT one rather than the other way around (see BackRow's own doc
-        // comment over there). The one thing that still has to differ is
-        // the fill: a translucent black here, not FamilyHistoryScreen's
-        // opaque [TT.surfaceRaised] — this button sits directly on top of
-        // an arbitrary photo and needs the dark tint to stay legible
-        // against whatever image loaded, where that screen's plain dark
-        // background never had that problem.
-        Box(
-            modifier = Modifier
-                .align(Alignment.TopStart)
-                .clip(TT.panelShape(10.dp))
-                .background(Color.Black.copy(alpha = 0.55f))
-                .border(1.dp, TT.border, TT.panelShape(10.dp))
-                .hudTouchable(cornerLength = 6.dp, cornerInset = 2.dp, onClick = onBack)
-                .padding(horizontal = 14.dp, vertical = 8.dp)
-        ) {
-            Text(
-                text = "← Back",
-                color = TT.accentCyan,
-                fontSize = 13.sp,
-                fontWeight = FontWeight.Medium
-            )
-        }
-
-        // The mirror image of the back button above — same chip style,
-        // opposite corner — kept matching it when that button's own
-        // shape/shadow changed (2026-09-24 revert), so the two corners of
-        // this header still agree with each other even though neither one
-        // nests into the photo's own 14dp clip anymore. Link-out only,
-        // never embedded (see [socialPlatformGlyph]'s own doc comment for
-        // why).
+        // The in-app back button that used to sit in the opposite (TopStart)
+        // corner was removed 2026-09-24 — the phone's own system back does
+        // the exact same thing everywhere in Android, so a second, on-screen
+        // control doing the same job was pure redundancy, not a real
+        // affordance (see FamilyHistoryScreen's matching note, which had the
+        // same button). This social button was originally styled to mirror
+        // that one for symmetry; kept the same 10dp-cut/translucent-black
+        // chip now that it's the only corner control left, rather than
+        // restyling it along with removing its former partner. Link-out
+        // only, never embedded (see [socialPlatformGlyph]'s own doc comment
+        // for why).
         if (socialUrl != null) {
             Box(
                 modifier = Modifier
@@ -1310,8 +1282,8 @@ private fun PortHistoryCard(stops: List<PortStop>, nowSeconds: Long, ports: Map<
  * [MapPin].
  */
 /**
- * Polls [LiveFlightTracker] — OpenSky, then adsb.lol, then airplanes.live —
- * for [flight]'s live ADS-B position, but only while it's actually worth
+ * Polls [LiveFlightTracker] — OpenSky, then adsb.lol — for [flight]'s live
+ * ADS-B position, but only while it's actually worth
  * asking: [FlightState.AIRBORNE] and a usable [FlightStatus.icaoHex]. On the
  * ground there's nothing moving to track — the static airport pin already
  * is the accurate position — and this whole mechanism only runs while this
@@ -1954,9 +1926,9 @@ private fun BiographyCard(bio: String) {
  * the one thing the whole snapshot architecture exists to avoid. Identifies
  * which mark to show from [url]'s host only — it never guesses from the
  * person, just reads the link they gave us. Rendered on [PersonHeader] as
- * just this platform mark inside the same dark chip [onBack] uses — no
- * "View on X" text, since the mark alone already reads as a link-out the
- * way it would on any other profile.
+ * just this platform mark inside its own dark chip — no "View on X" text,
+ * since the mark alone already reads as a link-out the way it would on any
+ * other profile.
  */
 private fun socialPlatformGlyph(url: String): String {
     val host = try {

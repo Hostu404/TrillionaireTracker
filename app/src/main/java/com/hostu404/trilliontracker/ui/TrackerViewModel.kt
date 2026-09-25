@@ -186,12 +186,34 @@ class TrackerViewModel(
      * moment the app launches rather than after a full interval first.
      * Parks in [awaitAppForeground] while backgrounded, same as the other
      * two loops in this class.
+     *
+     * Backs off on sustained failure instead of hammering Yahoo's
+     * unofficial, unauthenticated chart endpoint at a fixed cadence
+     * forever: this is the same class of endpoint that already broke once
+     * for this app (Stooq's old quote CSV started requiring a registered
+     * key with no warning — see [LiveQuoteClient]'s doc comment), and a
+     * dozen-ticker burst every [Config.LIVE_WEALTH_POLL_INTERVAL_MILLIS]
+     * indefinitely is exactly the kind of sustained pattern an anti-bot
+     * layer rate-limits. [LiveQuoteClient.fetchQuotes] coming back
+     * completely empty already means "every single ticker failed this
+     * pass" (a market-hours partial miss on just a few symbols is the
+     * normal case and doesn't trip this) — that's a strong signal of a
+     * network outage or a block, not routine per-ticker noise, so repeated
+     * empty passes widen the delay geometrically (capped at 8x, ~2.5
+     * minutes) rather than retrying at full speed every 20 seconds. A
+     * single non-empty result resets straight back to the normal cadence.
+     * [Holdings.updateAnchors] already treats an empty [prices] map as "no
+     * update this tick, keep the existing anchors" (see its own doc
+     * comment), so backing off here never blanks a number that was
+     * already live — it only slows how often this loop asks again.
      */
     private fun startLiveWealthPolling() = viewModelScope.launch {
+        var consecutiveEmptyPasses = 0
         while (true) {
             awaitAppForeground()
             val prices = LiveQuoteClient.fetchQuotes(Holdings.allTickers)
             if (prices.isNotEmpty()) {
+                consecutiveEmptyPasses = 0
                 val nowEpochSeconds = System.currentTimeMillis() / 1000
                 _state.update { current ->
                     current.copy(
@@ -203,9 +225,27 @@ class TrackerViewModel(
                         )
                     )
                 }
+            } else {
+                consecutiveEmptyPasses++
             }
-            delay(Config.LIVE_WEALTH_POLL_INTERVAL_MILLIS)
+            delay(Config.LIVE_WEALTH_POLL_INTERVAL_MILLIS * liveWealthBackoffMultiplier(consecutiveEmptyPasses))
         }
+    }
+
+    /**
+     * 1x normally; widens once failures are clearly sustained rather than
+     * a single blip (two back-to-back all-empty passes = 40s of real
+     * downtime already, at the normal cadence) — see
+     * [startLiveWealthPolling]'s doc comment for why this exists at all.
+     * Caps at 8x (~2.5 minutes between attempts) rather than climbing
+     * unbounded, so a source that does recover is still rediscovered in
+     * reasonable time instead of this loop backing itself off into
+     * near-silence.
+     */
+    private fun liveWealthBackoffMultiplier(consecutiveEmptyPasses: Int): Long = when {
+        consecutiveEmptyPasses >= 6 -> 8L
+        consecutiveEmptyPasses >= 2 -> 3L
+        else -> 1L
     }
 
     fun refreshNow() = viewModelScope.launch {

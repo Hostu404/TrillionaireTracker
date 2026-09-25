@@ -7,7 +7,7 @@ import java.util.concurrent.TimeUnit
 /**
  * One shared [OkHttpClient] — and, with it, one connection pool and one
  * background dispatcher thread pool — for every live client this app owns:
- * [LiveQuoteClient], [OpenSkyClient], [AdsbLolClient], [AirplanesLiveClient],
+ * [LiveQuoteClient], [OpenSkyClient], [AdsbLolClient],
  * [GoogleNewsClient], and (via [OkHttpClient.newBuilder], which keeps the
  * same dispatcher/connection pool while overriding per-use settings like
  * timeouts) [RemoteSnapshotSource]. Each of those used to build its own
@@ -26,9 +26,9 @@ import java.util.concurrent.TimeUnit
  * those run at once and the rest queue behind them, turning one poll into
  * two or three sequential round-trips for no reason other than an unrelated
  * host's default. 20 comfortably covers every current per-host burst
- * (quotes, OpenSky/adsb.lol/airplanes.live fallbacks, one snapshot fetch)
- * with headroom, while [Dispatcher.maxRequests] (the whole-client cap, left
- * at its default of 64) still bounds total concurrency across all hosts.
+ * (quotes, OpenSky/adsb.lol fallbacks, one snapshot fetch) with headroom,
+ * while [Dispatcher.maxRequests] (the whole-client cap, left at its default
+ * of 64) still bounds total concurrency across all hosts.
  */
 object NetworkClients {
     val shared: OkHttpClient = OkHttpClient.Builder()

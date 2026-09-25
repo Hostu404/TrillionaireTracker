@@ -169,11 +169,16 @@ private fun App() {
                 )
             }
 
+            // Neither destination below takes an onBack callback any more —
+            // both used to render their own in-app back button, removed
+            // 2026-09-24 as pure redundancy against the phone's own system
+            // back, which Navigation Compose already wires up to
+            // popBackStack() automatically for every destination, button or
+            // not.
             composable("person/{personId}") { entry ->
                 PersonDetailScreen(
                     personId = entry.arguments?.getString("personId").orEmpty(),
                     state = state,
-                    onBack = { navController.popBackStack() },
                     onOpenFamilyHistory = { id -> navController.navigate("familyHistory/$id") }
                 )
             }
@@ -182,8 +187,7 @@ private fun App() {
                 val id = entry.arguments?.getString("personId").orEmpty()
                 FamilyHistoryScreen(
                     personId = id,
-                    personName = state.personById(id)?.name ?: id,
-                    onBack = { navController.popBackStack() }
+                    personName = state.personById(id)?.name ?: id
                 )
             }
         }

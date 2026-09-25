@@ -45,9 +45,9 @@ data class LivePosition(
  * Thin client for OpenSky Network's public `/states/all` REST endpoint
  * (https://openskynetwork.github.io/opensky-api/rest.html) — free, keyless,
  * and callable straight from a device with no backend of any kind. This is
- * [LiveFlightTracker]'s primary source; [AdsbLolClient] and
- * [AirplanesLiveClient] back it up when OpenSky itself has nothing for a
- * given aircraft this tick. There's no equivalent redundancy for vessels:
+ * [LiveFlightTracker]'s primary source; [AdsbLolClient] backs it up when
+ * OpenSky itself has nothing for a given aircraft this tick. There's no
+ * equivalent redundancy for vessels:
  * real-time AIS positions aren't available anywhere for free without either
  * running a receiver or holding a paid/keyed account, so boats still show
  * port-granularity only (see [vesselMapPin] in `PersonDetailScreen.kt`) —
@@ -144,13 +144,16 @@ object OpenSkyClient {
 }
 
 /**
- * `adsb.lol` and `airplanes.live` are both community, crowd-fed ADS-B
- * aggregators — different receiver networks from OpenSky's and from each
- * other — and both publish the same "readsb"/tar1090-shaped JSON: a
- * `{"ac": [...]}` object where each element is one aircraft with `hex`,
- * `lat`, `lon`, `track`, `gs` (ground speed, in **knots** — unlike OpenSky's
- * m/s, hence the conversion below), and `alt_baro` (a number in feet, or the
- * literal string `"ground"` when parked/taxiing). One parser covers both.
+ * `adsb.lol` is a community, crowd-fed ADS-B aggregator — a different
+ * receiver network from OpenSky's — publishing "readsb"/tar1090-shaped
+ * JSON: a `{"ac": [...]}` object where each element is one aircraft with
+ * `hex`, `lat`, `lon`, `track`, `gs` (ground speed, in **knots** — unlike
+ * OpenSky's m/s, hence the conversion below), and `alt_baro` (a number in
+ * feet, or the literal string `"ground"` when parked/taxiing). `source` is
+ * still a parameter (rather than hardcoded) so [LivePosition.source] keeps
+ * naming exactly which aggregator answered, same as always — it's just down
+ * to one caller now that `airplanes.live` (see [LiveFlightTracker]'s own doc
+ * comment) is gone.
  */
 private fun parseReadsbAircraft(body: String, icaoHex: String, json: Json, source: String): LivePosition? {
     return try {
@@ -219,52 +222,30 @@ object AdsbLolClient {
 }
 
 /**
- * Second fallback behind [OpenSkyClient], tried only after [AdsbLolClient]
- * also comes up empty — a different receiver network again, same schema and
- * contract. See [parseReadsbAircraft].
- */
-object AirplanesLiveClient {
-    private val client get() = NetworkClients.shared
-    private val json = Json { ignoreUnknownKeys = true }
-    private const val USER_AGENT = "trillionaire-tracker/0.1 (+https://github.com/Hostu404)"
-
-    suspend fun fetchState(icaoHex: String): LivePosition? {
-        val request = Request.Builder()
-            .url("https://api.airplanes.live/v2/hex/${icaoHex.lowercase()}")
-            .header("User-Agent", USER_AGENT)
-            .build()
-        return withContext(Dispatchers.IO) {
-            try {
-                client.newCall(request).execute().use { response ->
-                    if (!response.isSuccessful) return@use null
-                    val body = response.body?.string() ?: return@use null
-                    parseReadsbAircraft(body, icaoHex, json, "airplanes.live")
-                }
-            } catch (_: IOException) {
-                null
-            } catch (_: Exception) {
-                null
-            }
-        }
-    }
-}
-
-/**
  * The single entry point [rememberLiveFlightPosition] (in
  * `PersonDetailScreen.kt`) actually calls. Tries [OpenSkyClient] first, then
- * [AdsbLolClient], then [AirplanesLiveClient], stopping at the first one
- * that actually has this aircraft right now — so a single down/rate-limited/
- * no-coverage source no longer means "no live dot" the way it did with only
- * one source wired in. Still never more than one network call per source
- * per tick, and the fallbacks only fire when the previous source truly came
- * back empty, so this doesn't multiply request volume against any of the
- * three on a healthy poll.
+ * [AdsbLolClient], stopping at the first one that actually has this aircraft
+ * right now — so a single down/rate-limited/no-coverage source no longer
+ * means "no live dot" the way it did with only one source wired in. Still
+ * never more than one network call per source per tick, and the fallback
+ * only fires when OpenSky truly came back empty, so this doesn't multiply
+ * request volume on a healthy poll.
+ *
+ * There used to be a third fallback here, `AirplanesLiveClient`
+ * (api.airplanes.live), dropped 2026-09-24 alongside the equivalent,
+ * already-fixed problem on the backend side (see `snapshot_worker.py`'s
+ * "Drop dead airplanes.live fallback" commit): their public API is now
+ * locked down, so every call through it was a guaranteed-failed request —
+ * caught safely by the same try/catch every client here has, never a crash,
+ * but still a doomed round trip eaten on every tick this screen's aircraft
+ * wasn't already covered by OpenSky or adsb.lol. The backend fix never made
+ * it across to this client-side copy of the same fallback chain; this is
+ * that fix, applied here too.
  */
 object LiveFlightTracker {
     suspend fun fetchPosition(icaoHex: String): LivePosition? {
         OpenSkyClient.fetchStates(listOf(icaoHex))[icaoHex.lowercase()]?.let { return it }
         AdsbLolClient.fetchState(icaoHex)?.let { return it }
-        AirplanesLiveClient.fetchState(icaoHex)?.let { return it }
         return null
     }
 }
