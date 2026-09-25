@@ -1888,143 +1888,156 @@ def build_snapshot() -> dict:
     current_trillionaire = None
 
     for subject in subjects:
-        value = net_worth(subject, prices)
-        if value is None:
-            print(f"[skip] {subject.id}: unpriced holding", file=sys.stderr)
+        try:
+            value = net_worth(subject, prices)
+            if value is None:
+                print(f"[skip] {subject.id}: unpriced holding", file=sys.stderr)
+                continue
+
+            series = history.get(subject.id)
+            if not series or not isinstance(series[-1], dict):
+                # Either genuinely new, or a leftover history entry in a shape
+                # this code no longer writes (e.g. a bare number instead of a
+                # {"t","v"} point — this has actually happened for a couple of
+                # people whose price history predates the current schema).
+                # Both get the same one-time backfill treatment rather than
+                # crashing the whole pass on data this code doesn't recognize.
+                if series:
+                    print(
+                        f"[history] {subject.id}: discarding malformed history entry, re-backfilling",
+                        file=sys.stderr,
+                    )
+                series = backfill_history(subject, now)
+                if series:
+                    print(f"[history] {subject.id}: backfilled {len(series)} points ({HISTORY_WINDOW_SECONDS // 86_400}d)")
+            prev_value = series[-1]["v"] if series else value
+            prev_t = series[-1]["t"] if series else now
+            series.append({"t": now, "v": value})
+            cutoff = now - HISTORY_WINDOW_SECONDS
+            series = [s for s in series if s["t"] >= cutoff]
+            history[subject.id] = series
+
+            if subject.id not in opens:
+                # Prefer the value nearest today's UTC midnight from whatever
+                # history we have (backfilled or accumulated) so day-over-day
+                # change is real from the very first pass of the day, instead
+                # of "$0 until tomorrow" just because the worker happened to
+                # start mid-day.
+                today_start = calendar.timegm(time.strptime(today, "%Y-%m-%d"))
+                opens[subject.id] = _nearest_by_time(
+                    [(s["t"], s["v"]) for s in series], today_start
+                ) or value
+            day_change = value - opens[subject.id]
+            elapsed = max(1, now - prev_t)
+            drift = (value - prev_value) / float(elapsed)
+
+            if passes % FLIGHT_EVERY == 0:
+                flight = flight_status(subject, state.setdefault("flights", {}), airports, countries, now)
+                state.setdefault("flight_payload", {})[subject.id] = flight
+            else:
+                flight = state.get("flight_payload", {}).get(subject.id)
+
+            if passes % VESSEL_EVERY == 0:
+                vessel = vessel_status(subject, state.setdefault("vessels", {}), ports, ais_cache, countries, now)
+                state.setdefault("vessel_payload", {})[subject.id] = vessel
+            else:
+                vessel = state.get("vessel_payload", {}).get(subject.id)
+
+            if subject.news_query and (passes % NEWS_EVERY == 1 or subject.id not in news_cache):
+                news_cache[subject.id] = fetch_news(subject.news_query)
+            news = news_cache.get(subject.id, [])
+
+            wiki_entry = wiki_cache.get(subject.id)
+            # A cached photoUrl that's an SVG predates the content filter above
+            # (it could only have gotten in before that check existed) — force
+            # a re-fetch regardless of the normal 30-day timer rather than
+            # waiting up to a month for a known-wrong cached image to clear.
+            wiki_photo_bad = bool(
+                wiki_entry
+                and wiki_entry.get("photoUrl")
+                and wiki_entry["photoUrl"].lower().split("?")[0].endswith(".svg")
+            )
+            wiki_stale = (
+                not wiki_entry
+                or wiki_photo_bad
+                or (now - wiki_entry.get("fetchedAt", 0)) >= WIKI_REFRESH_SECONDS
+            )
+            if subject.wikipedia_title and wiki_stale:
+                if wiki_photo_bad:
+                    print(
+                        f"[wikipedia] {subject.id}: discarding non-photo (SVG) cached image, re-fetching",
+                        file=sys.stderr,
+                    )
+                info = fetch_wikipedia_info(subject.wikipedia_title)
+                if info is not None:
+                    wiki_cache[subject.id] = {**info, "fetchedAt": now}
+                elif wiki_entry is None:
+                    # First attempt failed outright — cache a placeholder so a
+                    # dead lookup doesn't retry every single pass.
+                    wiki_cache[subject.id] = {"wikipediaUrl": None, "photoUrl": None, "fetchedAt": now}
+            wiki_entry = wiki_cache.get(subject.id, {})
+
+            if flight:
+                for k in ("departedIcao", "arrivedIcao", "estimatedDestinationIcao", "currentAirportIcao"):
+                    if flight.get(k):
+                        used_icaos.add(flight[k])
+                for stop in flight.get("recentStops") or []:
+                    used_icaos.add(stop["icao"])
+                for share in flight.get("locationBreakdown") or []:
+                    if share["bucket"] not in ("IN_FLIGHT", "NO_SIGNAL", "UNKNOWN_AIRPORT", "OTHER"):
+                        used_icaos.add(share["bucket"])
+
+            if vessel:
+                for k in ("departedPortUnlocode", "arrivedPortUnlocode", "currentPortUnlocode"):
+                    if vessel.get(k):
+                        used_unlocodes.add(vessel[k])
+                for stop in vessel.get("recentStops") or []:
+                    used_unlocodes.add(stop["unlocode"])
+                for share in vessel.get("locationBreakdown") or []:
+                    if share["bucket"] not in ("UNDERWAY", "NO_SIGNAL", "UNKNOWN_PORT", "OTHER"):
+                        used_unlocodes.add(share["bucket"])
+
+            track_crossing(state, subject, value, now)
+            if value >= THRESHOLD_USD and current_trillionaire is None:
+                current_trillionaire = subject.id
+
+            people.append(
+                {
+                    "id": subject.id,
+                    "name": subject.name,
+                    "company": subject.company,
+                    "birthDate": subject.birth_date,
+                    "residence": subject.residence,
+                    "bio": subject.bio,
+                    "netWorthUsd": value,
+                    "driftPerSecondUsd": drift,
+                    "dayChangeUsd": day_change,
+                    # Wire format stays a plain list of values, oldest to newest
+                    # (unchanged from before this file added timestamps
+                    # internally) — only the retention window changed, from the
+                    # last 48 raw samples (~4h at this project's real 5-minute
+                    # polling cadence) to a real rolling 7 days.
+                    "history": [s["v"] for s in history[subject.id]],
+                    "flight": flight,
+                    "vessel": vessel,
+                    "news": news,
+                    "socialUrl": subject.social_url,
+                    "wikipediaUrl": wiki_entry.get("wikipediaUrl"),
+                    "photoUrl": wiki_entry.get("photoUrl"),
+                }
+            )
+        except Exception as exc:                          # noqa: BLE001
+            # A bug or edge case in this one person's processing (flight/
+            # vessel status, history bookkeeping, wiki/news lookups) used
+            # to propagate all the way out of build_snapshot() and crash
+            # the whole pass -- meaning nobody's snapshot updated that run,
+            # not just this one person's. Every individual network call
+            # already degrades on its own (see fetch_quotes/flight_status/
+            # etc.'s own try/except blocks); this is the same treatment for
+            # the per-person logic that consumes their results, so one bad
+            # subject can never again take the other nine down with it.
+            print(f"[skip] {subject.id}: unexpected error building this pass: {exc}", file=sys.stderr)
             continue
-
-        series = history.get(subject.id)
-        if not series or not isinstance(series[-1], dict):
-            # Either genuinely new, or a leftover history entry in a shape
-            # this code no longer writes (e.g. a bare number instead of a
-            # {"t","v"} point — this has actually happened for a couple of
-            # people whose price history predates the current schema).
-            # Both get the same one-time backfill treatment rather than
-            # crashing the whole pass on data this code doesn't recognize.
-            if series:
-                print(
-                    f"[history] {subject.id}: discarding malformed history entry, re-backfilling",
-                    file=sys.stderr,
-                )
-            series = backfill_history(subject, now)
-            if series:
-                print(f"[history] {subject.id}: backfilled {len(series)} points ({HISTORY_WINDOW_SECONDS // 86_400}d)")
-        prev_value = series[-1]["v"] if series else value
-        prev_t = series[-1]["t"] if series else now
-        series.append({"t": now, "v": value})
-        cutoff = now - HISTORY_WINDOW_SECONDS
-        series = [s for s in series if s["t"] >= cutoff]
-        history[subject.id] = series
-
-        if subject.id not in opens:
-            # Prefer the value nearest today's UTC midnight from whatever
-            # history we have (backfilled or accumulated) so day-over-day
-            # change is real from the very first pass of the day, instead
-            # of "$0 until tomorrow" just because the worker happened to
-            # start mid-day.
-            today_start = calendar.timegm(time.strptime(today, "%Y-%m-%d"))
-            opens[subject.id] = _nearest_by_time(
-                [(s["t"], s["v"]) for s in series], today_start
-            ) or value
-        day_change = value - opens[subject.id]
-        elapsed = max(1, now - prev_t)
-        drift = (value - prev_value) / float(elapsed)
-
-        if passes % FLIGHT_EVERY == 0:
-            flight = flight_status(subject, state.setdefault("flights", {}), airports, countries, now)
-            state.setdefault("flight_payload", {})[subject.id] = flight
-        else:
-            flight = state.get("flight_payload", {}).get(subject.id)
-
-        if passes % VESSEL_EVERY == 0:
-            vessel = vessel_status(subject, state.setdefault("vessels", {}), ports, ais_cache, countries, now)
-            state.setdefault("vessel_payload", {})[subject.id] = vessel
-        else:
-            vessel = state.get("vessel_payload", {}).get(subject.id)
-
-        if subject.news_query and (passes % NEWS_EVERY == 1 or subject.id not in news_cache):
-            news_cache[subject.id] = fetch_news(subject.news_query)
-        news = news_cache.get(subject.id, [])
-
-        wiki_entry = wiki_cache.get(subject.id)
-        # A cached photoUrl that's an SVG predates the content filter above
-        # (it could only have gotten in before that check existed) — force
-        # a re-fetch regardless of the normal 30-day timer rather than
-        # waiting up to a month for a known-wrong cached image to clear.
-        wiki_photo_bad = bool(
-            wiki_entry
-            and wiki_entry.get("photoUrl")
-            and wiki_entry["photoUrl"].lower().split("?")[0].endswith(".svg")
-        )
-        wiki_stale = (
-            not wiki_entry
-            or wiki_photo_bad
-            or (now - wiki_entry.get("fetchedAt", 0)) >= WIKI_REFRESH_SECONDS
-        )
-        if subject.wikipedia_title and wiki_stale:
-            if wiki_photo_bad:
-                print(
-                    f"[wikipedia] {subject.id}: discarding non-photo (SVG) cached image, re-fetching",
-                    file=sys.stderr,
-                )
-            info = fetch_wikipedia_info(subject.wikipedia_title)
-            if info is not None:
-                wiki_cache[subject.id] = {**info, "fetchedAt": now}
-            elif wiki_entry is None:
-                # First attempt failed outright — cache a placeholder so a
-                # dead lookup doesn't retry every single pass.
-                wiki_cache[subject.id] = {"wikipediaUrl": None, "photoUrl": None, "fetchedAt": now}
-        wiki_entry = wiki_cache.get(subject.id, {})
-
-        if flight:
-            for k in ("departedIcao", "arrivedIcao", "estimatedDestinationIcao", "currentAirportIcao"):
-                if flight.get(k):
-                    used_icaos.add(flight[k])
-            for stop in flight.get("recentStops") or []:
-                used_icaos.add(stop["icao"])
-            for share in flight.get("locationBreakdown") or []:
-                if share["bucket"] not in ("IN_FLIGHT", "NO_SIGNAL", "UNKNOWN_AIRPORT", "OTHER"):
-                    used_icaos.add(share["bucket"])
-
-        if vessel:
-            for k in ("departedPortUnlocode", "arrivedPortUnlocode", "currentPortUnlocode"):
-                if vessel.get(k):
-                    used_unlocodes.add(vessel[k])
-            for stop in vessel.get("recentStops") or []:
-                used_unlocodes.add(stop["unlocode"])
-            for share in vessel.get("locationBreakdown") or []:
-                if share["bucket"] not in ("UNDERWAY", "NO_SIGNAL", "UNKNOWN_PORT", "OTHER"):
-                    used_unlocodes.add(share["bucket"])
-
-        track_crossing(state, subject, value, now)
-        if value >= THRESHOLD_USD and current_trillionaire is None:
-            current_trillionaire = subject.id
-
-        people.append(
-            {
-                "id": subject.id,
-                "name": subject.name,
-                "company": subject.company,
-                "birthDate": subject.birth_date,
-                "residence": subject.residence,
-                "bio": subject.bio,
-                "netWorthUsd": value,
-                "driftPerSecondUsd": drift,
-                "dayChangeUsd": day_change,
-                # Wire format stays a plain list of values, oldest to newest
-                # (unchanged from before this file added timestamps
-                # internally) — only the retention window changed, from the
-                # last 48 raw samples (~4h at this project's real 5-minute
-                # polling cadence) to a real rolling 7 days.
-                "history": [s["v"] for s in history[subject.id]],
-                "flight": flight,
-                "vessel": vessel,
-                "news": news,
-                "socialUrl": subject.social_url,
-                "wikipediaUrl": wiki_entry.get("wikipediaUrl"),
-                "photoUrl": wiki_entry.get("photoUrl"),
-            }
-        )
 
     people.sort(key=lambda p: p["netWorthUsd"], reverse=True)
 

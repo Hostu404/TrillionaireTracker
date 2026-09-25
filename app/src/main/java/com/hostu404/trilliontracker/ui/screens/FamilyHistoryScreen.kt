@@ -34,7 +34,6 @@ import com.hostu404.trilliontracker.data.WorldSnapshot
 import com.hostu404.trilliontracker.ui.components.NoteChip
 import com.hostu404.trilliontracker.ui.components.StatusChip
 import com.hostu404.trilliontracker.ui.components.hudCorners
-import com.hostu404.trilliontracker.ui.components.hudTouchable
 import com.hostu404.trilliontracker.ui.theme.TT
 
 /**
@@ -54,12 +53,16 @@ import com.hostu404.trilliontracker.ui.theme.TT
  * continuous thread back through time, same idea the user described it
  * with, rather than a literal branching tree (siblings, multiple marriages)
  * this data was never trying to capture in the first place.
+ *
+ * No in-app back control (removed 2026-09-24, along with PersonDetailScreen's
+ * — see that screen's own note): the phone's own system back already does
+ * this everywhere in Android, so a second, on-screen button doing the exact
+ * same thing was pure redundancy, not a real affordance.
  */
 @Composable
 fun FamilyHistoryScreen(
     personId: String,
-    personName: String,
-    onBack: () -> Unit
+    personName: String
 ) {
     val context = LocalContext.current
     val entry = remember(personId) { FamilyHistoryRepository.entryFor(personId, context) }
@@ -67,8 +70,6 @@ fun FamilyHistoryScreen(
     Box(Modifier.fillMaxSize()) {
         if (entry == null || entry.generations.isEmpty()) {
             Column(Modifier.padding(24.dp)) {
-                BackRow(onBack = onBack)
-                Spacer(Modifier.height(12.dp))
                 Text(
                     text = "Nothing documented yet for $personName.",
                     color = TT.inkMuted,
@@ -83,8 +84,6 @@ fun FamilyHistoryScreen(
             verticalArrangement = Arrangement.spacedBy(0.dp)
         ) {
             item {
-                BackRow(onBack = onBack)
-                Spacer(Modifier.height(10.dp))
                 // Same eyebrow-label + title shape as PersonDetailScreen's
                 // "[ SUBJECT ]" header (added 2026-09-24, same pass) — the
                 // bracket/monospace/letter-spaced chrome for the label, the
@@ -126,39 +125,6 @@ fun FamilyHistoryScreen(
                     TrailEndsMarker(generation.trailEndsNote)
                 }
             }
-        }
-    }
-}
-
-/**
- * This screen's original back-button chip: a plain raised-surface panel
- * (10dp cut, "← Back" text at 13sp Medium, no shadow) sitting directly on
- * the screen's own dark background. Briefly changed on 2026-09-24 to match
- * PersonDetailScreen's photo-overlay button (14dp cut, icon-only "←", drop
- * shadow) in the name of coherence, then reverted the same day — this
- * simpler chip was the one worth keeping, so PersonDetailScreen's button
- * now matches THIS shape and content instead (see that button's own doc
- * comment). No shadow/glow here because there's no photo underneath this
- * one competing for contrast the way there is over there.
- */
-@Composable
-private fun BackRow(onBack: () -> Unit) {
-    val shape = TT.panelShape(10.dp)
-    Row(verticalAlignment = Alignment.CenterVertically) {
-        Box(
-            modifier = Modifier
-                .clip(shape)
-                .background(TT.surfaceRaised)
-                .border(1.dp, TT.border, shape)
-                .hudTouchable(cornerLength = 6.dp, cornerInset = 2.dp, onClick = onBack)
-                .padding(horizontal = 14.dp, vertical = 8.dp)
-        ) {
-            Text(
-                text = "← Back",
-                color = TT.accentCyan,
-                fontSize = 13.sp,
-                fontWeight = FontWeight.Medium
-            )
         }
     }
 }
