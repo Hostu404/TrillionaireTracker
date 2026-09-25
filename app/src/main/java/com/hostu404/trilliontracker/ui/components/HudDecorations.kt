@@ -238,42 +238,53 @@ val hudPhotoGradeFilter: ColorFilter = ColorFilter.colorMatrix(
  * The portrait-specific escalation of [chromaticAberration] — reserved for
  * [com.hostu404.trilliontracker.ui.screens.PersonDetailScreen]'s
  * [PersonHeader] photo, deliberately meant to feel a bit wrong to look at
- * rather than merely "glassy." Calmed down 2026-09-24, alongside adding
- * [hudPhotoGradeFilter], in response to the combination reading as too
- * jarring/out-of-place against the rest of the HUD: the shift range is
- * roughly halved, the vertical creep that used to break left/right symmetry
- * (the thing that pushed it from "stylized" toward actively "off") is
- * removed entirely, and the beat is slower — fewer, gentler jumps rather
- * than a constant erratic pulse. It still never sits perfectly still (that
- * residual motion is what's left of the original "main-character treatment"
- * for whoever's profile is open), but it now reads as a HUD glitch flicker
- * rather than a bad signal. Every other chromatic-aberration use in the app
- * stays on the calm, fully static default ([chromaticAberration]).
+ * rather than merely "glassy." Calmed down 2026-09-24 (shift range halved,
+ * vertical creep removed, beat slowed) alongside adding [hudPhotoGradeFilter],
+ * in response to the combination reading as too jarring against the rest of
+ * the HUD — then restored back to its full original intensity 2026-09-25,
+ * on direct feedback that the calmer version had lost too much of the
+ * intended queasiness. The wide shift, the vertical creep that breaks
+ * left/right symmetry, and the faster, irregular 9-keyframe beat are all
+ * back exactly as they were originally tuned. Every other chromatic-
+ * aberration use in the app stays on the calm, fully static default
+ * ([chromaticAberration]) — this one is deliberate main-character treatment
+ * for whoever's profile is open, and is meant to stand out from that calm
+ * baseline.
  *
- * **Stepped, not smoothly interpolated.** [drawWithContent] here does three
- * full-photo [Canvas.saveLayer] passes (one per color channel) every time
- * this recomposes — real, non-trivial GPU/compositing cost, and continuous
- * for as long as this screen is open. Driving [shiftPx] with [animateFloat]
- * instead would recompose on every animation frame (up to 60/sec) to
- * interpolate smoothly between keyframes — i.e. up to 180 full-photo
- * redraws a second just for this one effect. This snaps directly between
- * keyframe values on a plain timed loop (~8 steps/sec) instead, cutting the
- * redraw rate roughly 7-8x for the same beat pattern.
+ * **Restoring the intensity did not reintroduce the old performance cost —
+ * those were always two separate things, not one dial.** [drawWithContent]
+ * here does three full-photo [Canvas.saveLayer] passes (one per color
+ * channel) every time this recomposes — real, non-trivial GPU/compositing
+ * cost, continuous for as long as this screen is open. What actually made
+ * an early version of this expensive was driving [shiftPx] with
+ * [animateFloat], which recomposes on every animation frame (up to 60/sec)
+ * to interpolate smoothly between keyframes — up to 180 full-photo redraws
+ * a second just for this one effect. That was already replaced, independent
+ * of the 2026-09-24 calm-down, with the stepped approach below: snapping
+ * directly between keyframe values on a plain timed loop (~8 steps/sec),
+ * cutting the redraw rate roughly 7-8x. The 2026-09-24 change only ever
+ * touched the keyframe *values* (how far, how often) — never this stepped
+ * mechanism — so restoring those values back to their original numbers
+ * costs exactly the same per-second redraw rate as the calmed-down version
+ * did. Full queasiness, same frame budget.
  */
 fun Modifier.sickeningChromaticAberration(
-    baseShift: Dp = 1.1.dp,
-    peakShift: Dp = 2.4.dp
+    baseShift: Dp = 2.4.dp,
+    peakShift: Dp = 5.6.dp
 ): Modifier = composed {
     val basePx = with(LocalDensity.current) { baseShift.toPx() }
     val peakPx = with(LocalDensity.current) { peakShift.toPx() }
 
-    // Same stepped-keyframe shape as before, just fewer/gentler jumps and a
-    // slower cycle (4.4s vs. the original 2.9s) — see the doc comment above.
+    // The original, more erratic 9-keyframe beat (2.9s cycle) — restored
+    // 2026-09-25 alongside the shift defaults above. Still driven through
+    // the same stepped LaunchedEffect loop below, not animateFloat — see
+    // the doc comment above for why that distinction is what keeps this
+    // performance-neutral relative to the calmed-down version it replaces.
     val keyframeValues = remember(basePx, peakPx) {
-        listOf(basePx, peakPx * 0.75f, basePx, peakPx, basePx * 0.6f, basePx)
+        listOf(basePx, peakPx, basePx * 0.55f, peakPx * 0.8f, basePx, peakPx, basePx * 0.4f, peakPx * 0.65f, basePx)
     }
-    val keyframeTimesMs = listOf(0, 500, 1200, 2400, 3200, 4400)
-    val stepMs = 160L
+    val keyframeTimesMs = listOf(0, 260, 620, 900, 1250, 1650, 1950, 2300, 2900)
+    val stepMs = 120L
 
     var shiftPx by remember { mutableFloatStateOf(basePx) }
     LaunchedEffect(keyframeValues) {
@@ -297,12 +308,14 @@ fun Modifier.sickeningChromaticAberration(
         val canvas = drawContext.canvas
         paint.blendMode = BlendMode.Plus
 
-        // Plain horizontal split now, same as the calm default — the
-        // vertical creep this used to add is exactly the asymmetry the doc
-        // comment above says was removed.
+        // Restored 2026-09-25: a small vertical creep on top of the usual
+        // horizontal split (an eighth of the horizontal shift, opposite sign
+        // each side) breaks the left/right symmetry a plain double-exposure
+        // would have — this asymmetry is exactly what pushes the effect from
+        // "stylized" toward "off," per the doc comment above.
         paint.colorFilter = redChannelFilter
         canvas.saveLayer(bounds, paint)
-        translate(left = -shiftPx) { contentScope.drawContent() }
+        translate(left = -shiftPx, top = shiftPx * 0.14f) { contentScope.drawContent() }
         canvas.restore()
 
         paint.colorFilter = greenChannelFilter
@@ -312,7 +325,7 @@ fun Modifier.sickeningChromaticAberration(
 
         paint.colorFilter = blueChannelFilter
         canvas.saveLayer(bounds, paint)
-        translate(left = shiftPx) { contentScope.drawContent() }
+        translate(left = shiftPx, top = -shiftPx * 0.14f) { contentScope.drawContent() }
         canvas.restore()
     }
 }
