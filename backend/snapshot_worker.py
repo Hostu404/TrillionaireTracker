@@ -1882,6 +1882,54 @@ NEWS_THEMES = (
     "Other",
 )
 
+
+def accumulate_lifetime_news_themes(
+    lifetime_entry: dict,
+    fetched: list[dict],
+    themes: list[str | None],
+) -> None:
+    """
+    Lifetime tally companion to flight_status()/vessel_status()'s own
+    "lifetime tally" (see either one's doc comment for the pattern this
+    follows) — same idea, a permanent, never-pruned figure that survives
+    every rolling/cached window this file otherwise uses, just counting
+    news themes instead of locations. Called once per person, only on the
+    same pass that actually classified a fresh batch of headlines (see the
+    call site in build_snapshot()) — never re-tallies an unchanged cached
+    list, same cadence discipline as classify_news_themes() itself.
+
+    Counts each DISTINCT headline (matched by title — see
+    classify_news_themes()'s doc comment on why title, not url, is the
+    stable identity for a Google News RSS item across separate fetches)
+    toward its theme exactly once, ever, even though the same headline can
+    legitimately keep reappearing in fetch_news()'s top results across many
+    refresh cycles while a story stays current. Without that dedup, one
+    sufficiently persistent story would silently dominate this tally just by
+    staying in the top 4 for a long time — turning "what kinds of things get
+    written about this person, over their whole tracked history" into "what
+    has been the top story lately", which isn't what a lifetime figure is
+    for. `newsThemeSeenTitles` is what makes that dedup possible; like
+    `lifetime_airports`/`lifetime_ports`, it's threaded in from build_snapshot()
+    and mutated in place here, not returned.
+
+    A null theme (classify_news_themes() failed or wasn't configured this
+    pass — see its own doc comment) contributes nothing, to either the count
+    or the seen-titles set: an unclassified headline gets a fair chance to
+    be tallied once it's actually successfully classified on some future
+    pass, rather than being permanently skipped just because this attempt
+    happened to fail.
+    """
+    counts = lifetime_entry.setdefault("newsThemeCounts", {})
+    seen_titles = lifetime_entry.setdefault("newsThemeSeenTitles", [])
+    seen_set = set(seen_titles)
+    for item, theme in zip(fetched, themes):
+        if theme is None or item["title"] in seen_set:
+            continue
+        seen_set.add(item["title"])
+        seen_titles.append(item["title"])
+        counts[theme] = counts.get(theme, 0) + 1
+
+
 def classify_news_themes(titles: list[str]) -> list[str | None]:
     """
     One Google Gemini API call classifying every one of a single person's
@@ -2289,6 +2337,7 @@ def build_snapshot() -> dict:
                 themes = classify_news_themes([item["title"] for item in fetched])
                 for item, theme in zip(fetched, themes):
                     item["theme"] = theme
+                accumulate_lifetime_news_themes(lifetime_entry, fetched, themes)
                 news_cache[subject.id] = fetched
             news = news_cache.get(subject.id, [])
 
@@ -2366,6 +2415,19 @@ def build_snapshot() -> dict:
                     "flight": flight,
                     "vessel": vessel,
                     "news": news,
+                    # Permanent, never-pruned count of how many DISTINCT
+                    # headlines have ever been classified into each theme for
+                    # this person — see accumulate_lifetime_news_themes()'s
+                    # doc comment. Empty until this person's news has been
+                    # classified at least once; grows only forward from here,
+                    # same "lifetime" convention as lifetimeLocations below.
+                    "lifetimeNewsThemes": sorted(
+                        (
+                            {"theme": theme, "count": count}
+                            for theme, count in lifetime_entry.get("newsThemeCounts", {}).items()
+                        ),
+                        key=lambda x: -x["count"],
+                    ),
                     "socialUrl": subject.social_url,
                     "wikipediaUrl": wiki_entry.get("wikipediaUrl"),
                     "photoUrl": wiki_entry.get("photoUrl"),
