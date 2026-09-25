@@ -308,13 +308,40 @@ data class FlightStatus(
      * should read that as "possibly landed, location unclear," not as
      * missing data.
      */
-    val probableIcao: String? = null
+    val probableIcao: String? = null,
+    /**
+     * Permanent, never-pruned counterpart to [locationBreakdown] — one entry
+     * per airport this aircraft has ever been confirmed at, with a running
+     * total that (unlike [locationBreakdown]'s trailing-7-day figures) never
+     * ages out. See snapshot_worker.py's flight_status() "lifetime tally"
+     * block for exactly how this accumulates — it's kept alongside the 7-day
+     * view, not instead of it, and is tracked per-person server-side so it
+     * survives even a tail/aircraft change. Sorted by [LifetimeLocationShare.totalSeconds]
+     * descending, same convention as [locationBreakdown].
+     */
+    val lifetimeLocations: List<LifetimeLocationShare> = emptyList()
 )
 
 @Serializable
 data class LocationShare(
     val bucket: String,
     val seconds: Long
+)
+
+/**
+ * One entry in [FlightStatus.lifetimeLocations] / [VesselStatus.lifetimeLocations]
+ * — a single named airport (ICAO) or port (UN/LOCODE) this person has ever
+ * been confirmed at, permanently. [location] holds whichever ident the
+ * parent status uses (an ICAO for a flight, a UN/LOCODE for a vessel) —
+ * shared between both rather than two near-identical classes, since nothing
+ * else about the shape differs.
+ */
+@Serializable
+data class LifetimeLocationShare(
+    val location: String,
+    val totalSeconds: Long,
+    val firstSeenEpoch: Long,
+    val lastSeenEpoch: Long
 )
 
 @Serializable
@@ -449,7 +476,15 @@ data class VesselStatus(
      * unknown". Null when no such guess exists — the UI should read that as
      * "possibly still underway, location unclear," not as missing data.
      */
-    val probablePortUnlocode: String? = null
+    val probablePortUnlocode: String? = null,
+    /**
+     * The maritime mirror of [FlightStatus.lifetimeLocations] — one entry per
+     * port this vessel has ever been confirmed moored at, permanently, never
+     * pruned the way [locationBreakdown]'s trailing-7-day figures are. See
+     * snapshot_worker.py's vessel_status() "lifetime tally" block. Sorted by
+     * [LifetimeLocationShare.totalSeconds] descending.
+     */
+    val lifetimeLocations: List<LifetimeLocationShare> = emptyList()
 )
 
 @Serializable
