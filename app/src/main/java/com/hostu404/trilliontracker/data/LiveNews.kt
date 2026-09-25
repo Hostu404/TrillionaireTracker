@@ -180,10 +180,30 @@ object GoogleNewsClient {
      * from at least one syndicated fashion trade outlet), which otherwise
      * renders as a wall of blank vertical space inside an otherwise normal
      * headline card, since Compose's `Text` respects embedded newlines.
+     *
+     * **`\s` alone doesn't actually mirror Python here — confirmed still
+     * broken in production (2026-09-25) on that exact fashion-outlet
+     * headline, arriving with no theme chip, i.e. via this live client poll,
+     * not the already-fixed backend snapshot path.** Kotlin's `Regex`, like
+     * Java's, only expands `\s` to Unicode whitespace when compiled with the
+     * `(?U)`/`UNICODE_CHARACTER_CLASS` flag — plain `\s` is ASCII-only
+     * ([ \t\n\x0B\f\r]). Python 3's `\s` is Unicode-aware by default, so
+     * `snapshot_worker.py`'s identical-looking `re.sub(r"\s+", ...)` already
+     * catches the Unicode line separator (U+2028), paragraph separator
+     * (U+2029), non-breaking space (U+00A0), and NEL (U+0085) that this
+     * outlet's feed apparently uses instead of a plain `\n` — none of which
+     * plain `\s` here ever matched, verified directly against the JVM regex
+     * engine Android also uses rather than assumed. `\p{Z}` (a Unicode
+     * property escape, available regardless of the `(?U)` flag) covers the
+     * separator categories including all four of those; NEL isn't a
+     * separator by Unicode's own categorization so it's listed explicitly,
+     * alongside zero-width space and a stray BOM for good measure even
+     * though neither of those two is wide enough to itself cause a visible
+     * gap.
      */
     private fun Element.textOf(tag: String): String =
         getElementsByTagName(tag).item(0)?.textContent
-            ?.replace(Regex("\\s+"), " ")
+            ?.replace(Regex("[\\s\\p{Z}\\u0085\\u200B\\uFEFF]+"), " ")
             ?.trim()
             .orEmpty()
 }
