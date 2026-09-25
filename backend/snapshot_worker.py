@@ -33,8 +33,20 @@ samples) is trimmed to a rolling 7-day window every pass — see the "trim to
 stays roughly flat-sized and the repo it's committed to doesn't grow
 without bound either.
 
-Stdlib only. No API keys. (ais_listener.py is the one exception — see its
-own docstring — it's a separate process this script never imports or calls.)
+Stdlib only — no pip dependencies added for any of this, including the one
+below. No API keys, with two opt-in exceptions:
+  - ais_listener.py — a separate process this script never imports or calls,
+    see its own docstring.
+  - classify_news_themes() — a Google Gemini API call classifying each
+    person's headlines into a fixed theme list, gated behind two
+    environment variables (GEMINI_API_KEY, GEMINI_NEWS_MODEL — see that
+    function's own doc comment). Both unset is a fully supported, silent
+    no-op: news itself, and everything else in this file, works exactly as
+    before with no theme tags reaching the client. Gemini specifically
+    because its free tier (aistudio.google.com/apikey) is a genuinely
+    permanent no-card program with a daily quota comfortably above this
+    app's real volume, not a time-limited trial — see that function's doc
+    comment for the actual numbers this was checked against.
 """
 
 from __future__ import annotations
@@ -45,6 +57,7 @@ import csv
 import json
 import math
 import os
+import re
 import sys
 import time
 import urllib.parse
@@ -143,6 +156,27 @@ def get(url: str, headers: dict[str, str] | None = None) -> bytes:
 
 def get_json(url: str, headers: dict[str, str] | None = None) -> Any:
     return json.loads(get(url, headers).decode("utf-8", "replace"))
+
+
+def post_json(url: str, payload: dict, headers: dict[str, str], timeout: int = TIMEOUT) -> Any:
+    """
+    The one POST call in this entire file — every other integration here
+    (quotes, flights, vessels, news, wikipedia) is a plain GET against a
+    free/keyless read-only endpoint, so `get`/`get_json` above never needed
+    a request body. Added specifically for classify_news_themes()'s call to
+    the Gemini API, which needs a JSON body (Gemini's own auth rides in the
+    URL as a query parameter, not a header — see that function — but the
+    `headers` parameter here stays required since every caller still needs
+    to set `content-type: application/json`) — kept separate from
+    `get`/`get_json` rather than bolting an optional body onto those, since
+    every existing caller of those two is a simple unauthenticated GET and
+    shouldn't have to reason about a body/headers combination it will never
+    use.
+    """
+    body = json.dumps(payload).encode("utf-8")
+    req = urllib.request.Request(url, data=body, headers=headers, method="POST")
+    with urllib.request.urlopen(req, timeout=timeout) as resp:
+        return json.loads(resp.read().decode("utf-8", "replace"))
 
 
 # ---------------------------------------------------------------- quotes
@@ -1826,6 +1860,151 @@ def fetch_news(query: str, limit: int = 4) -> list[dict]:
     return items
 
 
+# Fixed taxonomy, not whatever labels the model feels like inventing per
+# call — a chip UI needs a stable, finite set of labels so the same theme
+# always gets the same color/name across refreshes, and this list is
+# deliberately sized to match TT.categorical's 6 slots one-for-one on the
+# client (see NewsItem.theme in Models.kt / NewsRow in PersonDetailScreen.kt).
+# "Other" is last on purpose — same "reserved fold slot" role
+# TT.categorical's own doc comment already gives its 6th color, so a
+# headline that doesn't fit anywhere specific lands on the same visual
+# treatment this app already uses elsewhere for "didn't fit a named bucket."
+NEWS_THEMES = (
+    "Markets & Wealth",
+    "Business & Deals",
+    "Legal & Regulatory",
+    "Technology & Innovation",
+    "Public Life & Controversy",
+    "Other",
+)
+
+def classify_news_themes(titles: list[str]) -> list[str | None]:
+    """
+    One Google Gemini API call classifying every one of a single person's
+    headlines at once — not one call per headline — so this costs exactly
+    one request per person per news refresh (see NEWS_EVERY; this is called
+    from the same gated block fetch_news() already is, so it runs on that
+    same cadence, never more often). Requires two environment variables,
+    checked here rather than assumed:
+
+      GEMINI_API_KEY   — a real Gemini API key from aistudio.google.com/apikey.
+                         Never hardcoded, never committed — set as a GitHub
+                         Actions repo secret and passed through to this
+                         process's environment by the workflow, the same way
+                         any CI secret reaches a build step.
+      GEMINI_NEWS_MODEL — which model to call. Deliberately NOT defaulted to
+                         a hardcoded model id here: model names change over
+                         time, and shipping a guessed/stale one would fail
+                         silently (see the fallback below) in a way that's
+                         hard to notice. Check
+                         https://ai.google.dev/gemini-api/docs/models for the
+                         current Flash/Flash-Lite model name and set it
+                         explicitly — that tier is more than enough for "pick
+                         one label from a list of 6" and keeps this well
+                         inside the free tier's daily quota.
+
+    Gemini specifically, not another provider, because its free tier
+    (checked September 2026) is what this app's whole design philosophy
+    already runs on elsewhere — genuinely free indefinitely, not a
+    time-limited trial credit, no card on file required to activate it —
+    with a daily request quota in the low thousands. This app's actual
+    volume is nowhere close to that ceiling: one call per tracked person
+    (SeedData currently lists under twenty) per NEWS_EVERY passes, and since
+    every due person's classification fires within the same pass, the real
+    constraint is the free tier's per-minute cap, not its daily one — still
+    comfortable headroom at this app's scale, but worth knowing if the
+    tracked roster grows substantially, since every past-due person's call
+    goes out within the same short window.
+
+    Missing either environment variable, any network failure (including a
+    429 from exceeding either the daily or per-minute cap), a response that
+    doesn't parse as JSON, or a response of the wrong shape all fall back to
+    the same thing: a same-length list of Nones, exactly like fetch_news()
+    itself returns [] on failure — the "IN THE NEWS" list and its theme tags
+    already treat a missing theme as "no tag shown" (see NewsRow), not an
+    error, so classification being entirely unavailable never blocks a
+    snapshot pass or shows anything broken to the client. This function
+    never raises.
+    """
+    if not titles:
+        return []
+
+    api_key = os.environ.get("GEMINI_API_KEY")
+    model = os.environ.get("GEMINI_NEWS_MODEL")
+    if not api_key or not model:
+        print(
+            "[news-themes] GEMINI_API_KEY and/or GEMINI_NEWS_MODEL not set — "
+            "skipping theme classification for this pass",
+            file=sys.stderr,
+        )
+        return [None] * len(titles)
+
+    numbered = "\n".join(f"{i + 1}. {title}" for i, title in enumerate(titles))
+    theme_list = "\n".join(f"- {theme}" for theme in NEWS_THEMES)
+    prompt = (
+        "Classify each numbered news headline below into exactly one theme "
+        "from this fixed list:\n"
+        f"{theme_list}\n\n"
+        "Use \"Other\" only when none of the specific themes genuinely fit.\n\n"
+        f"Headlines:\n{numbered}\n\n"
+        "Respond with ONLY a JSON array of theme strings, in the same order "
+        "as the headlines, one entry per headline, using the exact theme "
+        "text above (e.g. [\"Markets & Wealth\", \"Other\"]). No other text."
+    )
+
+    # The API key rides in the URL's query string, not a header — that's
+    # Gemini's own convention (see ai.google.dev/gemini-api/docs), unlike
+    # every other authenticated header-based API this file could otherwise
+    # be compared to.
+    url = (
+        f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
+        f"?key={api_key}"
+    )
+
+    try:
+        response = post_json(
+            url,
+            payload={
+                "contents": [{"parts": [{"text": prompt}]}],
+                "generationConfig": {
+                    "maxOutputTokens": 300,
+                    # Best-effort: asks Gemini to constrain its own output to
+                    # valid JSON rather than relying solely on the prompt's
+                    # instruction. Older/unlisted models that don't recognize
+                    # this field ignore it rather than erroring, and the
+                    # regex fallback right below still catches a wrapped
+                    # response either way.
+                    "responseMimeType": "application/json",
+                },
+            },
+            headers={"content-type": "application/json"},
+        )
+        text = response["candidates"][0]["content"]["parts"][0]["text"]
+        try:
+            parsed = json.loads(text)
+        except (json.JSONDecodeError, TypeError):
+            # The model was asked for JSON-only, but modest wrapper text
+            # ("Here you go:\n[...]") is a documented occasional failure mode
+            # for every LLM API asked for structured output — pull out the
+            # first [...] span rather than failing the whole batch over it.
+            match = re.search(r"\[.*\]", text, re.DOTALL)
+            if not match:
+                raise
+            parsed = json.loads(match.group(0))
+
+        if not isinstance(parsed, list) or len(parsed) != len(titles):
+            raise ValueError(f"expected {len(titles)} theme strings, got {parsed!r}")
+
+        valid = {theme.lower(): theme for theme in NEWS_THEMES}
+        return [
+            valid.get(entry.strip().lower()) if isinstance(entry, str) else None
+            for entry in parsed
+        ]
+    except Exception as exc:                          # noqa: BLE001
+        print(f"[news-themes] classification failed: {exc}", file=sys.stderr)
+        return [None] * len(titles)
+
+
 # ---------------------------------------------------------------- wikipedia
 
 
@@ -2088,7 +2267,15 @@ def build_snapshot() -> dict:
                 vessel = state.get("vessel_payload", {}).get(subject.id)
 
             if subject.news_query and (passes % NEWS_EVERY == 1 or subject.id not in news_cache):
-                news_cache[subject.id] = fetch_news(subject.news_query)
+                fetched = fetch_news(subject.news_query)
+                # One classification call per person, only on the same pass
+                # that actually re-fetched their headlines — never re-runs
+                # against an unchanged cached list, so this rides NEWS_EVERY's
+                # existing cadence rather than adding a call of its own.
+                themes = classify_news_themes([item["title"] for item in fetched])
+                for item, theme in zip(fetched, themes):
+                    item["theme"] = theme
+                news_cache[subject.id] = fetched
             news = news_cache.get(subject.id, [])
 
             wiki_entry = wiki_cache.get(subject.id)

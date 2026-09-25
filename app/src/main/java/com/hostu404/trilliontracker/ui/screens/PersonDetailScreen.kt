@@ -2109,10 +2109,42 @@ private fun NewsRow(item: NewsItem, nowSeconds: Long) {
     ) {
         Text(text = item.title, color = TT.inkPrimary, fontSize = 14.sp)
         Spacer(Modifier.height(4.dp))
-        Text(
-            text = "${item.source} · ${Format.agoShort(item.publishedEpoch, nowSeconds)}",
-            color = TT.inkMuted,
-            fontSize = 11.sp
-        )
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                text = "${item.source} · ${Format.agoShort(item.publishedEpoch, nowSeconds)}",
+                color = TT.inkMuted,
+                fontSize = 11.sp
+            )
+            // Null whenever classify_news_themes() didn't run this pass (no
+            // GEMINI_API_KEY/GEMINI_NEWS_MODEL configured, or the call
+            // failed) or this headline arrived via the client-side live poll
+            // rather than the backend snapshot — see NewsItem.theme's doc
+            // comment. Either way, no tag rather than a placeholder/blank
+            // chip: an absent theme isn't an error state for this card.
+            item.theme?.let { theme ->
+                Spacer(Modifier.width(8.dp))
+                NoteChip(text = theme, color = newsThemeColor(theme))
+            }
+        }
     }
+}
+
+/**
+ * Maps a [NewsItem.theme] string to one of [TT.categorical]'s 6 colors —
+ * fixed, one-to-one, in the same order `NEWS_THEMES` is declared in
+ * snapshot_worker.py, so a given theme always renders with the same color
+ * every time rather than a color picked by hashing or first-seen order.
+ * Anything this client doesn't recognize (an older client talking to a
+ * newer backend that's added a theme since, or literally "Other") falls
+ * back to slot 5 — [TT.categorical]'s own doc comment already documents
+ * that slot as the reserved "didn't fit a named bucket" color, which is
+ * exactly the right visual treatment for both cases.
+ */
+private fun newsThemeColor(theme: String): Color = when (theme) {
+    "Markets & Wealth" -> TT.categorical[0]
+    "Business & Deals" -> TT.categorical[1]
+    "Legal & Regulatory" -> TT.categorical[2]
+    "Technology & Innovation" -> TT.categorical[3]
+    "Public Life & Controversy" -> TT.categorical[4]
+    else -> TT.categorical[5]
 }
