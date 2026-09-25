@@ -153,6 +153,19 @@ object GoogleNewsClient {
         }
     }
 
+    /**
+     * Collapses any run of whitespace — including a literal newline sitting
+     * in the MIDDLE of the string, not just leading/trailing ones a plain
+     * `.trim()` would catch — into a single space. Mirrors
+     * snapshot_worker.py's `fetch_news()`'s identical fix: some sources' RSS
+     * templates put literal blank lines inside `<title>` (seen in practice
+     * from at least one syndicated fashion trade outlet), which otherwise
+     * renders as a wall of blank vertical space inside an otherwise normal
+     * headline card, since Compose's `Text` respects embedded newlines.
+     */
     private fun Element.textOf(tag: String): String =
-        getElementsByTagName(tag).item(0)?.textContent?.trim().orEmpty()
+        getElementsByTagName(tag).item(0)?.textContent
+            ?.replace(Regex("\\s+"), " ")
+            ?.trim()
+            .orEmpty()
 }
