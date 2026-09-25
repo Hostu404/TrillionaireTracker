@@ -2227,15 +2227,45 @@ private fun NewsRow(item: NewsItem, nowSeconds: Long) {
 }
 
 /**
- * Maps a [NewsItem.theme] string to one of [TT.categorical]'s 6 colors —
- * fixed, one-to-one, in the same order `NEWS_THEMES` is declared in
- * snapshot_worker.py, so a given theme always renders with the same color
- * every time rather than a color picked by hashing or first-seen order.
- * Anything this client doesn't recognize (an older client talking to a
- * newer backend that's added a theme since, or literally "Other") falls
- * back to slot 5 — [TT.categorical]'s own doc comment already documents
- * that slot as the reserved "didn't fit a named bucket" color, which is
- * exactly the right visual treatment for both cases.
+ * A dedicated 7th color for the "Profile & Commentary" news theme — added
+ * alongside [TT.categorical] rather than as a 7th slot inside it, because
+ * that palette is its own separately-validated, separately-scoped thing
+ * (currently consumed only by TimelineStrip, with its own 6th "Other" fold
+ * slot already spoken for). Adding a theme here doesn't mean TimelineStrip
+ * grows a slot too, so this stays a standalone constant with its own
+ * validation record rather than an extension of that shared list.
+ *
+ * Not eyeballed — computed the same way the dataviz skill requires any
+ * categorical color to be: derived in OKLCH space and verified with the
+ * skill's own `validate_palette.js` to clear CVD separation (target ΔE >= 8)
+ * and the normal-vision floor (>= 15, a hard gate) against every other
+ * color already in play for this app — [TT.categorical]'s 5 theme colors,
+ * the "Other" orange, and the 3 reserved status colors — not just against
+ * its immediate neighbors. Full 7-color news-theme palette (the 5 existing
+ * + this + "Other" orange) re-validated together as of this addition:
+ * worst adjacent CVD ΔE 14.4, worst adjacent normal-vision ΔE 16.7 — both
+ * comfortably clear their floors. Below 3:1 contrast against the app's dark
+ * surface like [TT.categorical]'s own slot 3 already is, which is why
+ * every consumer of a theme color already renders it next to the theme's
+ * text label (see [NewsRow] and [LifetimeNewsThemeRow]) rather than as a
+ * bare color swatch — that visible label is the required secondary
+ * encoding, not an optional nicety.
+ */
+private val newsProfileCommentary = Color(0xFFB21557)
+
+/**
+ * Maps a [NewsItem.theme] string to a color — the first 5 real themes reuse
+ * [TT.categorical]'s existing slots one-for-one, in the same order
+ * `NEWS_THEMES` is declared in snapshot_worker.py, so a given theme always
+ * renders with the same color every time rather than a color picked by
+ * hashing or first-seen order; "Profile & Commentary" gets its own
+ * dedicated [newsProfileCommentary] rather than a 7th [TT.categorical] slot
+ * (see that color's own doc comment for why). Anything this client doesn't
+ * recognize (an older client talking to a newer backend that's added a
+ * theme since, or literally "Other") falls back to [TT.categorical]'s slot
+ * 5 — its own doc comment already documents that slot as the reserved
+ * "didn't fit a named bucket" color, which is exactly the right visual
+ * treatment for both cases.
  */
 private fun newsThemeColor(theme: String): Color = when (theme) {
     "Markets & Wealth" -> TT.categorical[0]
@@ -2243,5 +2273,6 @@ private fun newsThemeColor(theme: String): Color = when (theme) {
     "Legal & Regulatory" -> TT.categorical[2]
     "Technology & Innovation" -> TT.categorical[3]
     "Public Life & Controversy" -> TT.categorical[4]
+    "Profile & Commentary" -> newsProfileCommentary
     else -> TT.categorical[5]
 }

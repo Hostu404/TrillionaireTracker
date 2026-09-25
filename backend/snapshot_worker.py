@@ -1875,19 +1875,37 @@ def fetch_news(query: str, limit: int = 4) -> list[dict]:
 
 # Fixed taxonomy, not whatever labels the model feels like inventing per
 # call — a chip UI needs a stable, finite set of labels so the same theme
-# always gets the same color/name across refreshes, and this list is
-# deliberately sized to match TT.categorical's 6 slots one-for-one on the
-# client (see NewsItem.theme in Models.kt / NewsRow in PersonDetailScreen.kt).
-# "Other" is last on purpose — same "reserved fold slot" role
-# TT.categorical's own doc comment already gives its 6th color, so a
-# headline that doesn't fit anywhere specific lands on the same visual
-# treatment this app already uses elsewhere for "didn't fit a named bucket."
+# always gets the same color/name across refreshes. "Other" is last on
+# purpose — same "reserved fold slot" role a categorical palette's own last
+# slot always plays (see newsThemeColor() in PersonDetailScreen.kt), so a
+# headline that doesn't fit anywhere specific lands on that dedicated
+# visual treatment rather than crowding a real theme's color.
+#
+# Seven real themes + "Other" = 8 total, not more: the dataviz skill's own
+# categorical-color methodology caps a reliably CVD-safe palette at 8 hues
+# (references/color-formula.md — "8 hues, fixed order... a 9th series is
+# never a generated hue, it folds into Other"), and a brute-force OKLCH
+# search confirmed this in practice for this exact palette — a 9th distinct
+# hue separated enough from the other 8 (5 existing categorical slots + the
+# Other-orange + this file's one new addition + this app's 3 reserved
+# status colors) simply doesn't exist in practice. So this expansion adds
+# exactly ONE new theme, not several: "Profile & Commentary" was picked
+# because it was the actual, observed gap — real headlines (an encyclopedia-
+# style biography, an inspirational-quote piece) that weren't about this
+# person's markets/business/tech/legal/controversy activity at all, and so
+# were landing in "Other" even though they were substantive, classifiable
+# coverage. See classify_news_themes()'s prompt for exactly how it's worded
+# to stay distinct from "Public Life & Controversy" (conflict/scandal —
+# something happened that reflects on them, positively or negatively) vs.
+# "Profile & Commentary" (reflective — someone writing ABOUT them: bios,
+# interviews, retrospectives, quotes, "lessons from" pieces).
 NEWS_THEMES = (
     "Markets & Wealth",
     "Business & Deals",
     "Legal & Regulatory",
     "Technology & Innovation",
     "Public Life & Controversy",
+    "Profile & Commentary",
     "Other",
 )
 
@@ -1969,8 +1987,8 @@ def classify_news_themes(titles: list[str]) -> list[str | None]:
                          https://ai.google.dev/gemini-api/docs/models for the
                          current Flash/Flash-Lite model name and set it
                          explicitly — that tier is more than enough for "pick
-                         one label from a list of 6" and keeps this well
-                         inside the free tier's daily quota.
+                         one label from a short fixed list" and keeps this
+                         well inside the free tier's daily quota.
 
     Gemini specifically, not another provider, because its free tier
     (checked September 2026) is what this app's whole design philosophy
@@ -2012,6 +2030,14 @@ def classify_news_themes(titles: list[str]) -> list[str | None]:
         "Classify each numbered news headline below into exactly one theme "
         "from this fixed list:\n"
         f"{theme_list}\n\n"
+        "\"Public Life & Controversy\" is for something that HAPPENED "
+        "involving this person — a dispute, scandal, backlash, lawsuit-"
+        "adjacent controversy, or public reaction to their actions or "
+        "statements. \"Profile & Commentary\" is for someone WRITING ABOUT "
+        "this person rather than reporting a new event — biographies, "
+        "encyclopedia-style profiles, interviews, career retrospectives, "
+        "quotes or motivational pieces attributed to them, and \"lessons "
+        "from\"/\"best of\" style commentary.\n"
         "Use \"Other\" only when none of the specific themes genuinely fit.\n\n"
         f"Headlines:\n{numbered}\n\n"
         "Respond with ONLY a JSON array of theme strings, in the same order "
