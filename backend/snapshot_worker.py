@@ -17,7 +17,9 @@ Per pass, upstream:
     0 AIS requests        (vessel positions are read from ais_cache.json,
                            written by ais_listener.py — see that file. This
                            worker never talks to AIS.)
-    M RSS requests        (M = tracked people, only every NEWS_EVERY passes)
+    M RSS requests        (M = tracked people, every pass — free/keyless, so
+                            unlike the paid classification pass below it, no
+                            reason to gate it)
     <=M Wikipedia requests (only every WIKI_EVERY_DAYS days per person — a
                             photo and article link barely ever change)
     A one-time backfill (K' historical-range quote requests, K' = tickers
@@ -145,7 +147,6 @@ DEAD_RECKON_MAX_SECONDS = 30 * 60  # how far past the last real fix we'll still
 VESSEL_SIGNAL_LOST_GRACE_SECONDS = 4 * 86_400    # 4 days
 VESSEL_SIGNAL_LOST_HARD_CEILING_SECONDS = 10 * 86_400  # 10 days
 
-NEWS_EVERY = 15      # passes between RSS reads
 WIKI_REFRESH_SECONDS = 30 * 86_400   # a photo/article link barely ever changes
 
 
@@ -1846,9 +1847,17 @@ def fetch_news(query: str, limit: int = 4) -> list[dict]:
 
     items = []
     for node in root.iterfind(".//item"):
-        title = (node.findtext("title") or "").strip()
+        # re.sub collapses ANY run of whitespace — including embedded
+        # newlines sitting in the middle of the string, not just leading/
+        # trailing ones a plain .strip() would catch — into a single space.
+        # Some sources' RSS templates put literal blank lines inside
+        # <title> (seen in practice from at least one syndicated fashion
+        # trade outlet); left alone, that renders client-side as a wall of
+        # blank vertical space inside an otherwise normal-looking headline
+        # card, since Text respects embedded newlines.
+        title = re.sub(r"\s+", " ", node.findtext("title") or "").strip()
         link = (node.findtext("link") or "").strip()
-        source = (node.findtext("source") or "").strip() or "Google News"
+        source = re.sub(r"\s+", " ", node.findtext("source") or "").strip() or "Google News"
         pub = node.findtext("pubDate")
         try:
             from email.utils import parsedate_to_datetime
@@ -1932,12 +1941,20 @@ def accumulate_lifetime_news_themes(
 
 def classify_news_themes(titles: list[str]) -> list[str | None]:
     """
-    One Google Gemini API call classifying every one of a single person's
-    headlines at once — not one call per headline — so this costs exactly
-    one request per person per news refresh (see NEWS_EVERY; this is called
-    from the same gated block fetch_news() already is, so it runs on that
-    same cadence, never more often). Requires two environment variables,
-    checked here rather than assumed:
+    One Google Gemini API call classifying every genuinely new headline for
+    a single person at once — not one call per headline, and, as of the
+    build_snapshot() call site, not one call per person per pass either.
+    fetch_news() itself now runs every pass (it's free/keyless, so there's
+    no reason to gate it), but this function is only ever called with the
+    titles that AREN'T already sitting in that person's previous cache entry
+    with a known theme — a headline that simply stays in someone's top
+    stories across many passes, or a person who just doesn't get much
+    coverage, costs a classification call exactly once, the first pass it's
+    ever seen, not once per fixed cycle regardless of whether anything
+    actually changed. Most passes for most people call this with an empty
+    list, which short-circuits below before any network call happens at
+    all. Requires two environment variables, checked here rather than
+    assumed:
 
       GEMINI_API_KEY   — a real Gemini API key from aistudio.google.com/apikey.
                          Never hardcoded, never committed — set as a GitHub
@@ -1960,13 +1977,11 @@ def classify_news_themes(titles: list[str]) -> list[str | None]:
     already runs on elsewhere — genuinely free indefinitely, not a
     time-limited trial credit, no card on file required to activate it —
     with a daily request quota in the low thousands. This app's actual
-    volume is nowhere close to that ceiling: one call per tracked person
-    (SeedData currently lists under twenty) per NEWS_EVERY passes, and since
-    every due person's classification fires within the same pass, the real
-    constraint is the free tier's per-minute cap, not its daily one — still
-    comfortable headroom at this app's scale, but worth knowing if the
-    tracked roster grows substantially, since every past-due person's call
-    goes out within the same short window.
+    volume sits well under that ceiling even in the worst case (every
+    tracked person getting a genuinely new headline on the same pass, which
+    is the only way this could ever approach one call per person per
+    5-minute pass), and realistically far under it in practice, since most
+    passes for most people have nothing new to classify at all.
 
     Missing either environment variable, any network failure (including a
     429 from exceeding either the daily or per-minute cap), a response that
@@ -2328,17 +2343,45 @@ def build_snapshot() -> dict:
             else:
                 vessel = state.get("vessel_payload", {}).get(subject.id)
 
-            if subject.news_query and (passes % NEWS_EVERY == 1 or subject.id not in news_cache):
+            if subject.news_query:
+                # fetch_news() is free/keyless, so it runs every single pass
+                # now — no reason to gate it the way the actually-costly step
+                # below is gated. A transient failure (fetch_news() returns
+                # [] on any error) keeps whatever was already cached instead
+                # of blanking it, so a brief RSS hiccup never wipes a
+                # person's news for a whole cycle — it just quietly retries
+                # next pass, 5 minutes later.
                 fetched = fetch_news(subject.news_query)
-                # One classification call per person, only on the same pass
-                # that actually re-fetched their headlines — never re-runs
-                # against an unchanged cached list, so this rides NEWS_EVERY's
-                # existing cadence rather than adding a call of its own.
-                themes = classify_news_themes([item["title"] for item in fetched])
-                for item, theme in zip(fetched, themes):
-                    item["theme"] = theme
-                accumulate_lifetime_news_themes(lifetime_entry, fetched, themes)
-                news_cache[subject.id] = fetched
+                if fetched or subject.id not in news_cache:
+                    # The actual token-saving step: reuse a headline's
+                    # already-known theme when the exact same headline (by
+                    # title) was already in the PREVIOUS cache entry, and
+                    # only send genuinely new titles to Gemini. A title whose
+                    # previous theme is null (an earlier attempt failed, or
+                    # classification wasn't configured yet) is treated as
+                    # still "new" too, so a failure gets retried next pass —
+                    # 5 minutes later — instead of staying stuck null until
+                    # that headline eventually ages out of the top results
+                    # entirely. See classify_news_themes()'s own doc comment
+                    # for what this means for actual call volume.
+                    previous_themes = {
+                        item["title"]: item.get("theme") for item in news_cache.get(subject.id, [])
+                    }
+                    new_titles = [
+                        item["title"] for item in fetched
+                        if previous_themes.get(item["title"]) is None
+                    ]
+                    fresh_by_title = dict(
+                        zip(new_titles, classify_news_themes(new_titles) if new_titles else [])
+                    )
+                    themes = [
+                        fresh_by_title.get(item["title"], previous_themes.get(item["title"]))
+                        for item in fetched
+                    ]
+                    for item, theme in zip(fetched, themes):
+                        item["theme"] = theme
+                    accumulate_lifetime_news_themes(lifetime_entry, fetched, themes)
+                    news_cache[subject.id] = fetched
             news = news_cache.get(subject.id, [])
 
             wiki_entry = wiki_cache.get(subject.id)
