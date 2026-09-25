@@ -98,6 +98,10 @@ SIGNAL_LOST_HARD_CEILING_SECONDS = 14 * 3600  # 14 hours
 
 USER_AGENT = "trillionaire-tracker/0.1 (+https://github.com/Hostu404)"
 TIMEOUT = 15
+# Only for classify_news_themes()'s call to Gemini — see that call site's own
+# comment for why an LLM completion gets a longer budget than every other
+# (fast, keyless, non-AI) request in this file, which all use TIMEOUT above.
+GEMINI_TIMEOUT = 30
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 HOLDINGS_PATH = os.path.join(HERE, "holdings.json")
@@ -1978,6 +1982,16 @@ def classify_news_themes(titles: list[str]) -> list[str | None]:
                 },
             },
             headers={"content-type": "application/json"},
+            # Every other call in this file hits a small, fast, keyless REST
+            # endpoint, so the file-wide TIMEOUT (15s) is plenty. An actual
+            # LLM generating a JSON response is a different kind of call —
+            # occasionally slower, especially on a free tier — and 15s was
+            # observed timing out a real classification request in practice
+            # (see this function's own [news-themes] log line when that
+            # happens). Doubled here, for this call only, rather than
+            # loosening TIMEOUT itself and slowing down failure detection on
+            # every fast endpoint that actually relies on it staying tight.
+            timeout=GEMINI_TIMEOUT,
         )
         text = response["candidates"][0]["content"]["parts"][0]["text"]
         try:
