@@ -520,8 +520,10 @@ data class NewsItem(
     /**
      * One of a fixed set of theme labels ("Markets & Wealth", "Business &
      * Deals", "Legal & Regulatory", "Technology & Innovation", "Public Life
-     * & Controversy", "Other") — see `classify_news_themes()` and
-     * `NEWS_THEMES` in snapshot_worker.py for the taxonomy and how a
+     * & Controversy", "Profile & Commentary", "Other") — see
+     * `classify_news_themes()` and `NEWS_THEMES` in snapshot_worker.py for
+     * the taxonomy (including why it's capped at these 7 real themes + one
+     * fold slot, not more) and how a
      * headline gets sorted into it (a Google Gemini API call, backend-side
      * only — this app has no on-device classification and never ships an
      * API key to the client). Rendered as a small colored tag next to the
