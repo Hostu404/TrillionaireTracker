@@ -104,16 +104,18 @@ TIMEOUT = 15
 # comment for why an LLM completion gets a longer budget than every other
 # (fast, keyless, non-AI) request in this file, which all use TIMEOUT above.
 GEMINI_TIMEOUT = 30
+# Passes between theme-tagging calls: one call for everyone every 15 minutes,
+# at most 96 a day — see refresh_news().
+THEME_EVERY = 3
 
 # How many of a person's top Google News results fetch_news() keeps (and,
 # downstream, how many classify_news_themes() ever has to consider for that
 # person). Raising this is free on the RSS side — fetch_news() is
 # free/keyless regardless of how many <item> nodes it reads out of one
 # response — and it's cheap on the Gemini side too, for a reason worth
-# spelling out: build_snapshot()'s call site already batches every new
-# headline for a person into ONE classify_news_themes() call, and already
-# only sends titles this person's previous cache doesn't already have a
-# theme for (see that call site's own comment). So this number controls
+# spelling out: refresh_news() already batches every untagged headline,
+# for everyone, into ONE classify_news_themes() call, and never re-sends a
+# title that already has a theme. So this number controls
 # prompt SIZE (a few more short lines in an already-tiny numbered list) —
 # not request COUNT, which is what actually counts against Gemini's free-
 # tier daily/per-minute caps. Doubled from the original 4 to 8 so a story
@@ -1984,10 +1986,9 @@ def accumulate_lifetime_news_themes(
     "lifetime tally" (see either one's doc comment for the pattern this
     follows) — same idea, a permanent, never-pruned figure that survives
     every rolling/cached window this file otherwise uses, just counting
-    news themes instead of locations. Called once per person, only on the
-    same pass that actually classified a fresh batch of headlines (see the
-    call site in build_snapshot()) — never re-tallies an unchanged cached
-    list, same cadence discipline as classify_news_themes() itself.
+    news themes instead of locations. Called for every person on every pass
+    (see refresh_news()); the seen-titles dedup below means an unchanged
+    cached list adds nothing.
 
     Counts each DISTINCT headline (matched by title — see
     classify_news_themes()'s doc comment on why title, not url, is the
@@ -2025,20 +2026,10 @@ def accumulate_lifetime_news_themes(
 
 def classify_news_themes(titles: list[str]) -> list[str | None]:
     """
-    One Google Gemini API call classifying every genuinely new headline for
-    a single person at once — not one call per headline, and, as of the
-    build_snapshot() call site, not one call per person per pass either.
-    fetch_news() itself now runs every pass (it's free/keyless, so there's
-    no reason to gate it), but this function is only ever called with the
-    titles that AREN'T already sitting in that person's previous cache entry
-    with a known theme — a headline that simply stays in someone's top
-    stories across many passes, or a person who just doesn't get much
-    coverage, costs a classification call exactly once, the first pass it's
-    ever seen, not once per fixed cycle regardless of whether anything
-    actually changed. Most passes for most people call this with an empty
-    list, which short-circuits below before any network call happens at
-    all. Requires two environment variables, checked here rather than
-    assumed:
+    One Google Gemini API call classifying a batch of headlines at once —
+    every untagged headline, for everyone; see refresh_news() for when it
+    runs and why it's one call for everyone. Requires two environment
+    variables, checked here rather than assumed:
 
       GEMINI_API_KEY   — a real Gemini API key from aistudio.google.com/apikey.
                          Never hardcoded, never committed — set as a GitHub
@@ -2060,12 +2051,8 @@ def classify_news_themes(titles: list[str]) -> list[str | None]:
     (checked September 2026) is what this app's whole design philosophy
     already runs on elsewhere — genuinely free indefinitely, not a
     time-limited trial credit, no card on file required to activate it —
-    with a daily request quota in the low thousands. This app's actual
-    volume sits well under that ceiling even in the worst case (every
-    tracked person getting a genuinely new headline on the same pass, which
-    is the only way this could ever approach one call per person per
-    5-minute pass), and realistically far under it in practice, since most
-    passes for most people have nothing new to classify at all.
+    with a daily request quota. One call every THEME_EVERY passes is at
+    most 96 a day.
 
     Missing either environment variable, any network failure (including a
     429 from exceeding either the daily or per-minute cap), a response that
@@ -2102,9 +2089,9 @@ def classify_news_themes(titles: list[str]) -> list[str | None]:
         "Miami's \"Billionaire Bunker\" island; it wins over every other "
         "theme when a bunker is mentioned at all. \"God & Spirituality\" "
         "is faith, God, religion, prayer, spirituality or the meaning of "
-        "life, including this person talking about them. \"War & Defense\" is military "
+        "life, including the person in the headline talking about them. \"War & Defense\" is military "
         "matters and wars: ongoing conflicts, armed forces, weapons and "
-        "defense policy, including this person commenting on them or their "
+        "defense policy, including the person in the headline commenting on them or their "
         "companies' part in them. \"Business & Deals\" is companies, deals, "
         "acquisitions, contracts and management. \"Technology & "
         "Innovation\" is products, launches, research and engineering. "
@@ -2132,7 +2119,7 @@ def classify_news_themes(titles: list[str]) -> list[str | None]:
             payload={
                 "contents": [{"parts": [{"text": prompt}]}],
                 "generationConfig": {
-                    "maxOutputTokens": 300,
+                    "maxOutputTokens": 2048,
                     # Best-effort: asks Gemini to constrain its own output to
                     # valid JSON rather than relying solely on the prompt's
                     # instruction. Older/unlisted models that don't recognize
@@ -2389,6 +2376,49 @@ def track_crossing(state: dict, subject: Subject, value: float, now: int) -> Non
         tracking[subject.id] = {"over": False}
 
 
+def refresh_news(subjects: list[Subject], state: dict, passes: int) -> None:
+    """
+    Fetches everyone's headlines (free, every pass), then tags every untagged
+    one in a single classify_news_themes() call every THEME_EVERY passes.
+
+    One call for everyone, not one per person per pass: that ran through
+    Gemini's free daily quota by mid-afternoon UTC, leaving every later
+    headline untagged until it reset at midnight Pacific. A headline that
+    already has a theme, under anyone, keeps it and is never re-sent, so a
+    story under two people is classified once. A failed call leaves its
+    headlines untagged until the next try.
+    """
+    news_cache = state.setdefault("news", {})
+    known = {
+        item["title"]: item["theme"]
+        for items in news_cache.values() for item in items if item.get("theme")
+    }
+    for subject in subjects:
+        if subject.news_query:
+            fetched = fetch_news(subject.news_query)
+            # A failed fetch returns []: keep what's cached rather than blank it.
+            if fetched or subject.id not in news_cache:
+                news_cache[subject.id] = fetched
+
+    untagged = list(dict.fromkeys(
+        item["title"] for items in news_cache.values() for item in items
+        if item["title"] not in known
+    ))
+    if untagged and passes % THEME_EVERY == 0:
+        known.update(
+            (title, theme)
+            for title, theme in zip(untagged, classify_news_themes(untagged)) if theme
+        )
+
+    lifetime = state.setdefault("lifetime", {})
+    for person_id, items in news_cache.items():
+        for item in items:
+            item["theme"] = known.get(item["title"])
+        accumulate_lifetime_news_themes(
+            lifetime.setdefault(person_id, {}), items, [item["theme"] for item in items]
+        )
+
+
 def build_snapshot() -> dict:
     now = int(time.time())
     subjects = load_subjects()
@@ -2397,6 +2427,7 @@ def build_snapshot() -> dict:
     migrate_news_themes(state)
     state["pass"] = state.get("pass", 0) + 1
     passes = state["pass"]
+    refresh_news(subjects, state, passes)
 
     tickers = sorted({h.ticker.upper() for s in subjects for h in s.holdings})
     prices = price_quotes_in_usd(fetch_quotes(tickers))
@@ -2508,45 +2539,6 @@ def build_snapshot() -> dict:
             else:
                 vessel = state.get("vessel_payload", {}).get(subject.id)
 
-            if subject.news_query:
-                # fetch_news() is free/keyless, so it runs every single pass
-                # now — no reason to gate it the way the actually-costly step
-                # below is gated. A transient failure (fetch_news() returns
-                # [] on any error) keeps whatever was already cached instead
-                # of blanking it, so a brief RSS hiccup never wipes a
-                # person's news for a whole cycle — it just quietly retries
-                # next pass, 5 minutes later.
-                fetched = fetch_news(subject.news_query)
-                if fetched or subject.id not in news_cache:
-                    # The actual token-saving step: reuse a headline's
-                    # already-known theme when the exact same headline (by
-                    # title) was already in the PREVIOUS cache entry, and
-                    # only send genuinely new titles to Gemini. A title whose
-                    # previous theme is null (an earlier attempt failed, or
-                    # classification wasn't configured yet) is treated as
-                    # still "new" too, so a failure gets retried next pass —
-                    # 5 minutes later — instead of staying stuck null until
-                    # that headline eventually ages out of the top results
-                    # entirely. See classify_news_themes()'s own doc comment
-                    # for what this means for actual call volume.
-                    previous_themes = {
-                        item["title"]: item.get("theme") for item in news_cache.get(subject.id, [])
-                    }
-                    new_titles = [
-                        item["title"] for item in fetched
-                        if previous_themes.get(item["title"]) is None
-                    ]
-                    fresh_by_title = dict(
-                        zip(new_titles, classify_news_themes(new_titles) if new_titles else [])
-                    )
-                    themes = [
-                        fresh_by_title.get(item["title"], previous_themes.get(item["title"]))
-                        for item in fetched
-                    ]
-                    for item, theme in zip(fetched, themes):
-                        item["theme"] = theme
-                    accumulate_lifetime_news_themes(lifetime_entry, fetched, themes)
-                    news_cache[subject.id] = fetched
             news = news_cache.get(subject.id, [])
 
             wiki_entry = wiki_cache.get(subject.id)

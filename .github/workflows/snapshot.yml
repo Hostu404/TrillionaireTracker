@@ -30,7 +30,7 @@ jobs:
   refresh:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       # OurAirports' airports.csv turns bare ICAO codes into friendly
       # "City, ST" labels and gives the map real coordinates to drop pins

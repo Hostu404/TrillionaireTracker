@@ -24,6 +24,9 @@ object Config {
      */
     const val SNAPSHOT_URL: String = "https://hostu404.github.io/TrillionaireTracker/snapshot.json"
 
+    /** The app's source, linked from the main page's header. */
+    const val REPO_URL: String = "https://github.com/Hostu404/TrillionaireTracker"
+
     /**
      * The only people the app shows or looks anything up for. Anyone else in
      * a snapshot (an older one still cached on the CDN, or a backend that

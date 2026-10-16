@@ -3,7 +3,10 @@ package com.hostu404.trilliontracker.ui.screens
 import com.hostu404.trilliontracker.BuildConfig
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -17,6 +20,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -76,18 +80,33 @@ fun TrackerScreen(
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun Header(state: TrackerUiState, onRefresh: () -> Unit) {
+    val uriHandler = LocalUriHandler.current
     Column {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
-                Text(
-                    text = "TRILLIONAIRE TRACKER",
-                    color = TT.inkPrimary,
-                    fontSize = 16.sp,
-                    fontWeight = FontWeight.Bold,
-                    letterSpacing = 1.sp
-                )
+                // The link drops under the title on a phone too narrow for both.
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(
+                        text = "TRILLIONAIRE TRACKER",
+                        color = TT.inkPrimary,
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.Bold,
+                        letterSpacing = 1.sp,
+                        modifier = Modifier.alignByBaseline()
+                    )
+                    Text(
+                        text = "View source ↗",
+                        color = TT.accent,
+                        fontSize = 11.sp,
+                        maxLines = 1,
+                        modifier = Modifier
+                            .alignByBaseline()
+                            .clickable { uriHandler.openUri(Config.REPO_URL) }
+                    )
+                }
                 Text(
                     text = statusLine(state),
                     color = TT.inkMuted,
