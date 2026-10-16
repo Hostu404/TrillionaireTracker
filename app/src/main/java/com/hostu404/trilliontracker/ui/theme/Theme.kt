@@ -1,151 +1,126 @@
 package com.hostu404.trilliontracker.ui.theme
 
 import androidx.compose.foundation.isSystemInDarkTheme
-import androidx.compose.foundation.shape.CutCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Typography
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
-import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.unit.Dp
-import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
+import androidx.compose.ui.unit.em
 
 /**
- * Chart-surface palette, dark steps — a Cyberpunk 2077-inspired terminal/HUD
- * read on top of the same structure the app started with: near-black planes,
- * a cyan identity colour, and status colours that stay reserved.
+ * Back to basics: pure (OLED) black, white text, thin white borders,
+ * monospace everywhere, Unicode symbols instead of icons. No background
+ * image, glows or effects.
  *
- * [accentCyan] and [accentYellow] are chrome, not data: brackets, glow,
- * section labels, the odd highlighted figure. They're deliberately brighter
- * than anything [categorical] or [series] is allowed to be — a data mark has
- * to stay inside the dark-mode OKLCH lightness band (~0.48–0.67) to hold its
- * contrast and CVD-separation guarantees (validated with dataviz's
- * validate_palette.js), but chrome answers only to a plain WCAG text-contrast
- * check, so it can run brighter without misleading anyone about what's data.
+ * The one colour in the app is today's gain or loss ([up]/[down]). Every
+ * other status (airborne, signal lost, unverified...) is white and carries
+ * its own glyph and word, so nothing ever signals with colour alone.
  *
- * Status colours are reserved and never reused as series or chrome colours.
- * Every status still carries a glyph and a label — nothing here signals with
- * colour alone.
+ * The world map keeps its own colours for now (see WorldMapCard).
  */
 object TT {
-    val plane = Color(0xFF050507)
+    val plane = Color.Black
 
-    /**
-     * Panel fills carry ~85% alpha rather than being fully opaque — every
-     * HUD card is meant to read as a pane of glass over the background
-     * image, not a solid tile. Not used via MaterialTheme.colorScheme
-     * anywhere (checked: nothing in this app reads colorScheme.surface/
-     * surfaceVariant directly), so the alpha only ever shows up where a
-     * screen paints TT.surface / TT.surfaceRaised itself.
-     */
-    val surface = Color(0xD90C1416)
-    val surfaceRaised = Color(0xD9141F22)
+    /** Panels are black like the page: the white border is what marks them out. */
+    val surface = Color.Black
+    val surfaceRaised = Color.Black
 
-    val inkPrimary = Color(0xFFF2FBFF)
-    val inkSecondary = Color(0xFFA9C4C9)
-    val inkMuted = Color(0xFF5C6B6E)
+    val inkPrimary = Color.White
+    val inkSecondary = Color(0xFFBDBDBD)
+    val inkMuted = Color(0xFF8A8A8A)
 
-    val grid = Color(0xFF17262A)
-    val baseline = Color(0xFF1E3236)
+    val grid = Color(0xFF2A2A2A)
+    val baseline = Color(0xFF3A3A3A)
 
-    /** Faint neon-cyan panel edge — every card gets this HUD-line border. */
-    val border = Color(0x4D00E5FF)
+    /** The thin white line round every panel. */
+    val border = Color.White
 
-    /** A stronger edge for a focused/hero panel, or for a corner bracket's glow. */
-    val borderBright = Color(0x9900E5FF)
+    /** Headings, links and other chrome. */
+    val accent = Color.White
 
-    /** Chrome only — brackets, section-label text, the scanline tint. Not a data colour. */
-    val accentCyan = Color(0xFF00E5FF)
-
-    /** Chrome only, used sparingly — the one "important" highlight (a selected tab, a key stat). */
-    val accentYellow = Color(0xFFFCEE0A)
-
-    /** System monospace, for numeric/code-like HUD readouts — never for prose. */
+    /** System monospace, used for all text (see [typography] below). */
     val monoNumeric = FontFamily.Monospace
 
-    /** Single-series colour for sparklines and the threshold gauge. */
-    val series = Color(0xFF00A2BE)
+    /** The line in the 7-day chart and the $1T bar. */
+    val series = Color.White
 
-    val good = Color(0xFF2ECC71)
-    val warning = Color(0xFFFAB219)
-    val critical = Color(0xFFFF3355)
+    /** Status roles, all white: each one carries a glyph and a word too. */
+    val good = Color.White
+    val warning = Color.White
+    val critical = Color.White
+
+    /** Today's gain or loss: the only colours in the app. */
+    val up = Color(0xFF2ECC71)
+    val down = Color(0xFFFF3355)
 
     /**
-     * Fixed categorical order, dark steps — a "Night City" neon run (cyan →
-     * blue → indigo → violet → magenta → orange) rather than the generic
-     * business-chart hue family (teal/gold/etc.) the previous six steps used —
-     * those read as a spreadsheet regardless of how dark the surface was.
-     * Re-derived by searching OKLCH space directly for the widest adjacent
-     * separation along that neon arc, then confirmed with the dataviz skill's
-     * validator: `node scripts/validate_palette.js
-     * "#00A2BE,#0067B2,#7183FF,#7145B5,#CB6AB2,#E05014" --mode dark --surface
-     * "#0C1416"` — lightness band, chroma floor, CVD separation (worst
-     * adjacent ΔE 14.4) and the normal-vision floor (worst ΔE 17.0, clears
-     * the 15 gate) all pass; slot 4 sits under the 3:1 contrast floor (2.86),
-     * which is the documented "relief" case — legal because every user of
-     * this palette (currently [com.hostu404.trilliontracker.ui.components.TimelineStrip])
-     * ships a legend (exact label + duration + percentage per entry) as the
-     * visible-labels relief channel. Assigned by entity identity (sorted
-     * airport code), never by rank, so a slot doesn't repaint when the
-     * underlying data shifts. [series] (slot 1) is included
-     * here so identity charts share the same hue as single-series ones.
+     * Greys for the time-by-location strip's segments, assigned by place
+     * (sorted airport/port code), never by rank. The strip's legend names
+     * every segment with its duration and share, so the shade is only a
+     * helper, never the only way to tell two places apart.
      */
     val categorical: List<Color> = listOf(
-        series,                 // 1 cyan
-        Color(0xFF0067B2),      // 2 blue
-        Color(0xFF7183FF),      // 3 indigo
-        Color(0xFF7145B5),      // 4 violet
-        Color(0xFFCB6AB2),      // 5 orchid magenta
-        Color(0xFFE05014)       // 6 neon orange — reserved for the "Other" fold slot
+        Color.White,
+        Color(0xFFC8C8C8),
+        Color(0xFF969696),
+        Color(0xFF6E6E6E),
+        Color(0xFF4E4E4E),
+        Color(0xFF353535)   // reserved for the "Other" fold slot
     )
 
-    /**
-     * The panel shape every HUD card uses instead of a plain rounded rect —
-     * top-start and bottom-end corners cut at 45°, the other two square. Same
-     * asymmetric-bevel look as the reference panels, and a straight
-     * find/replace target for the old `RoundedCornerShape(x)` calls.
-     */
-    fun panelShape(cut: Dp = 10.dp): Shape = CutCornerShape(topStart = cut, bottomEnd = cut)
+    /** Square corners on every panel. */
+    val panelShape: Shape = RectangleShape
 }
 
 private val scheme = darkColorScheme(
-    primary = TT.series,
-    onPrimary = Color.White,
+    primary = Color.White,
+    onPrimary = Color.Black,
     background = TT.plane,
     onBackground = TT.inkPrimary,
     surface = TT.surface,
     onSurface = TT.inkPrimary,
     surfaceVariant = TT.surfaceRaised,
     onSurfaceVariant = TT.inkSecondary,
-    outline = TT.baseline,
-    error = TT.critical
+    outline = TT.border,
+    error = TT.down
 )
 
-private val typography = Typography(
-    titleLarge = TextStyle(fontSize = 20.sp, fontWeight = FontWeight.SemiBold),
-    titleMedium = TextStyle(fontSize = 16.sp, fontWeight = FontWeight.Medium),
-    bodyMedium = TextStyle(fontSize = 14.sp),
-    bodySmall = TextStyle(fontSize = 12.sp),
-    labelSmall = TextStyle(
-        fontSize = 11.sp,
-        fontWeight = FontWeight.Medium,
-        textAlign = TextAlign.Start
+/** Every Material text style, in monospace. */
+private val typography = Typography().run {
+    // Monospace everywhere, and line height tied to the text's own size:
+    // Material's fixed line heights (24sp for body text) left small text
+    // sitting in tall, mostly empty rows.
+    fun TextStyle.mono() = copy(fontFamily = FontFamily.Monospace, lineHeight = 1.3.em)
+    Typography(
+        displayLarge = displayLarge.mono(),
+        displayMedium = displayMedium.mono(),
+        displaySmall = displaySmall.mono(),
+        headlineLarge = headlineLarge.mono(),
+        headlineMedium = headlineMedium.mono(),
+        headlineSmall = headlineSmall.mono(),
+        titleLarge = titleLarge.mono(),
+        titleMedium = titleMedium.mono(),
+        titleSmall = titleSmall.mono(),
+        bodyLarge = bodyLarge.mono(),
+        bodyMedium = bodyMedium.mono(),
+        bodySmall = bodySmall.mono(),
+        labelLarge = labelLarge.mono(),
+        labelMedium = labelMedium.mono(),
+        labelSmall = labelSmall.mono()
     )
-)
+}
 
 @Composable
 fun TrillionaireTrackerTheme(
     @Suppress("UNUSED_PARAMETER") darkTheme: Boolean = isSystemInDarkTheme(),
     content: @Composable () -> Unit
 ) {
-    // Deliberately dark in both system modes: the palette's dark steps were
-    // validated against the dark surface and an automatic flip would not hold.
+    // Black in both system modes, on purpose.
     MaterialTheme(
         colorScheme = scheme,
         typography = typography,

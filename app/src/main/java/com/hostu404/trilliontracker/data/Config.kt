@@ -24,6 +24,30 @@ object Config {
      */
     const val SNAPSHOT_URL: String = "https://hostu404.github.io/TrillionaireTracker/snapshot.json"
 
+    /**
+     * The only people the app shows or looks anything up for. Anyone else in
+     * a snapshot (an older one still cached on the CDN, or a backend that
+     * hasn't caught up with holdings.json) is dropped as soon as it's read.
+     */
+    val TRACKED_PEOPLE: Set<String> = setOf(
+        "musk", "bezos", "zuckerberg", "luckey", "altman", "amodei", "trump"
+    )
+
+    /**
+     * The only news themes the app shows or counts — must match
+     * TRACKED_NEWS_THEMES in backend/snapshot_worker.py. Any other theme in
+     * a snapshot (an older one still on the CDN) shows as no tag.
+     */
+    val TRACKED_NEWS_THEMES: Set<String> = setOf(
+        "Alien News",
+        "Bunkers",
+        "Business & Deals",
+        "God & Spirituality",
+        "Technology & Innovation",
+        "Markets & Wealth",
+        "War & Defense"
+    )
+
     /** How often the client re-reads the CDN copy. */
     const val POLL_INTERVAL_SECONDS: Long = 60L
 
@@ -52,10 +76,9 @@ object Config {
      * studied figure is $211B/year across 34 countries representing 76%
      * of the world's poor; $318B is that same result extrapolated to the
      * whole world (~0.3% of global GDP) — the headline number used here.
-     * Like the app's other social-comparison stats, this is a real, cited
-     * estimate — a theoretical transfer cost, not a claim about how aid
-     * would actually be delivered — used only as the divisor for a "what
-     * this money could buy" comparison.
+     * A real, cited estimate — a theoretical transfer cost, not a claim
+     * about how aid would actually be delivered — used only as the divisor
+     * for a "what this money could buy" comparison.
      */
     const val ANNUAL_POVERTY_ELIMINATION_COST_USD: Double = 318_000_000_000.0
 

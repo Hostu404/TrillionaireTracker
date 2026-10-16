@@ -6,45 +6,38 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.produceState
 import androidx.compose.ui.Alignment
-import androidx.compose.ui.BiasAlignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.painter.ColorPainter
-import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalUriHandler
-import androidx.compose.ui.text.TextStyle
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import coil.compose.AsyncImage
 import com.hostu404.trilliontracker.data.AirportInfo
 import com.hostu404.trilliontracker.data.AirportStop
 import com.hostu404.trilliontracker.data.FamilyHistoryRepository
@@ -55,6 +48,7 @@ import com.hostu404.trilliontracker.data.LivePosition
 import com.hostu404.trilliontracker.data.NetWorthEngine
 import com.hostu404.trilliontracker.data.NewsItem
 import com.hostu404.trilliontracker.data.NewsThemeShare
+import com.hostu404.trilliontracker.data.LifetimeLocationShare
 import com.hostu404.trilliontracker.data.LiveFlightTracker
 import com.hostu404.trilliontracker.data.Person
 import com.hostu404.trilliontracker.data.PortInfo
@@ -69,26 +63,26 @@ import kotlin.math.cos
 import kotlin.math.asin
 import kotlin.math.sqrt
 import com.hostu404.trilliontracker.ui.Format
+import com.hostu404.trilliontracker.ui.PlaceNames
 import com.hostu404.trilliontracker.ui.TrackerUiState
 import com.hostu404.trilliontracker.ui.awaitAppForeground
-import com.hostu404.trilliontracker.ui.components.DeltaChip
+import com.hostu404.trilliontracker.ui.components.DayChange
+import com.hostu404.trilliontracker.ui.components.SheetLine
 import com.hostu404.trilliontracker.ui.components.MapFocusRequest
 import com.hostu404.trilliontracker.ui.components.MapPin
-import com.hostu404.trilliontracker.ui.components.NoteChip
+import com.hostu404.trilliontracker.ui.components.PersonPhoto
+import com.hostu404.trilliontracker.ui.components.SegmentStyle
+import com.hostu404.trilliontracker.ui.components.SegmentSwatch
+import com.hostu404.trilliontracker.ui.components.ThemeLabel
 import com.hostu404.trilliontracker.ui.components.TimelineSegment
 import com.hostu404.trilliontracker.ui.components.TimelineStrip
-import com.hostu404.trilliontracker.ui.components.honeycombGlowCell
-import com.hostu404.trilliontracker.ui.components.hudCorners
-import com.hostu404.trilliontracker.ui.components.hudTouchable
-import com.hostu404.trilliontracker.ui.components.rubberBandPhotoDrag
-import com.hostu404.trilliontracker.ui.components.sickeningChromaticAberration
-import com.hostu404.trilliontracker.ui.components.hudPhotoGradeFilter
-import com.hostu404.trilliontracker.ui.components.RollingNumber
 import com.hostu404.trilliontracker.ui.components.Sparkline
 import com.hostu404.trilliontracker.ui.components.StatusChip
 import com.hostu404.trilliontracker.ui.components.isSparklineFlat
 import com.hostu404.trilliontracker.ui.components.ThresholdGauge
 import com.hostu404.trilliontracker.ui.components.WorldMapCard
+import com.hostu404.trilliontracker.ui.components.pinSymbol
+import java.util.Locale
 import com.hostu404.trilliontracker.ui.theme.TT
 
 @Composable
@@ -101,9 +95,7 @@ fun PersonDetailScreen(
     val threshold = state.snapshot?.thresholdUsd ?: 1_000_000_000_000.0
     val nowSeconds = state.nowMillis / 1000
 
-    // No background here — App() already paints the shared Saturn
-    // image + scrim + scanlines behind the NavHost; an opaque fill on
-    // this screen's root would hide all of it.
+    // No background here — App() already paints the page black.
     Box(
         Modifier
             .fillMaxSize()
@@ -152,263 +144,77 @@ fun PersonDetailScreen(
         val liveNews = rememberLiveNews(query = person.name, seedNews = person.news)
 
         // Only true for whoever FamilyHistoryRepository actually has a
-        // sourced entry for (just the `brin` proof-of-concept for now) — see
-        // FamilyHistoryScreen's own doc comment. Nobody sees an empty or
-        // "nothing here yet" card for the other nine; the entry point simply
-        // doesn't render until there's real, cited content behind it.
+        // sourced entry for — see FamilyHistoryScreen's own doc comment.
+        // Nobody sees an empty or "nothing here yet" card; the entry point
+        // simply doesn't render until there's real, cited content behind it.
         val hasFamilyHistory = remember(person.id) {
             FamilyHistoryRepository.entryFor(person.id, mapContext) != null
         }
 
-        // Layout order below is deliberate, most-asked-about first: who they
-        // are (bio, with the link-out social button folded into its end) ->
-        // where they came from, generations back (family history, when
-        // sourced — grouped with bio since both are "who they are," not the
-        // live numbers below) -> the number this whole app is about ->
-        // where they physically are right now (map) -> the raw
-        // aircraft/vessel status feeding that map -> how that time actually
-        // breaks down -> the raw stop history behind the breakdown ->
-        // what's being written about them.
-        LazyColumn(
-            contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 10.dp, bottom = 28.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp)
+        // One bordered sheet, the same on everyone's page: who they are ->
+        // the number this app is about -> where their plane and boat are ->
+        // what's being written about them. A section with nothing to show
+        // says so rather than disappearing.
+        Column(
+            Modifier
+                .fillMaxSize()
+                .verticalScroll(rememberScrollState())
+                .padding(12.dp)
         ) {
-            item {
+            Column(
+                Modifier
+                    .fillMaxWidth()
+                    .border(1.dp, TT.border, TT.panelShape)
+            ) {
                 PersonHeader(
-                    name = person.name,
-                    company = person.company,
-                    photoUrl = person.photoUrl,
-                    wikipediaUrl = person.wikipediaUrl,
-                    birthDate = person.birthDate,
-                    residence = person.residence,
-                    socialUrl = person.socialUrl,
-                    // Strictly "moving right now," matching TrackerScreen's
-                    // own PersonRow definition (state == AIRBORNE / UNDERWAY,
-                    // not merely a confirmed-but-parked fix) — see that
-                    // file's 2026-09-24 comment for why the two need to
-                    // agree: this header is the thing the list's own
-                    // transit indicator sends someone to, so if the list
-                    // lights up, this is where they land expecting to see it
-                    // confirmed.
-                    isAirborneNow = person.flight?.state == FlightState.AIRBORNE,
-                    isUnderwayNow = person.vessel?.state == VesselState.UNDERWAY
+                    person = person,
+                    onOpenFamilyHistory = if (hasFamilyHistory) {
+                        { onOpenFamilyHistory(person.id) }
+                    } else {
+                        null
+                    }
                 )
-            }
-
-            person.bio?.let { bio ->
-                item { BiographyCard(bio) }
-            }
-
-            if (hasFamilyHistory) {
-                item {
-                    FamilyHistoryEntryCard(onClick = { onOpenFamilyHistory(person.id) })
-                }
-            }
-
-            item {
-                Column(
-                    Modifier
-                        .fillMaxWidth()
-                        .background(TT.surface, TT.panelShape(14.dp))
-                        .then(
-                            if (projected >= threshold) {
-                                Modifier.honeycombGlowCell(xFraction = 0.5f, yFraction = 0.12f, color = TT.good)
-                            } else {
-                                Modifier
-                            }
-                        )
-                        .border(1.dp, TT.border, TT.panelShape(14.dp))
-                        .padding(14.dp)
-                ) {
-                    RollingNumber(
-                        text = Format.exactUsd(projected),
-                        style = TextStyle(
-                            fontSize = 24.sp,
-                            fontWeight = FontWeight.SemiBold,
-                            fontFamily = FontFamily.Monospace
-                        ),
-                        color = if (projected >= threshold) TT.good else TT.inkPrimary
-                    )
-
-                    Spacer(Modifier.height(8.dp))
-
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        DeltaChip(
-                            deltaUsd = person.dayChangeUsd,
-                            formatted = Format.signedCompactUsd(person.dayChangeUsd) + " today"
-                        )
-                        if (state.isLive(person.id)) {
-                            Spacer(Modifier.width(8.dp))
-                            StatusChip(glyph = "●", label = "TRACKING · market price", color = TT.good)
-                        }
-                    }
-
-                    Spacer(Modifier.height(12.dp))
-
-                    ThresholdGauge(
-                        progress = NetWorthEngine.progressToThreshold(projected, threshold),
-                        leftLabel = "${Format.percentOf(projected, threshold)} of \$1T",
-                        rightLabel = if (projected >= threshold) "over the line" else
-                            "${Format.compactUsd(NetWorthEngine.shortfall(projected, threshold))} to go",
-                        barColor = if (projected >= threshold) TT.good else TT.series
-                    )
-
-                    NetWorthEngine.secondsToThreshold(projected, state.driftPerSecond(person), threshold)?.let { secs ->
-                        Spacer(Modifier.height(6.dp))
-                        Text(
-                            text = "~${Format.roughDuration(secs)} to \$1T at current rate",
-                            color = TT.inkMuted,
-                            fontSize = 11.sp
-                        )
-                    }
-
-                    Spacer(Modifier.height(12.dp))
-
-                    val historyFlat = isSparklineFlat(person.history)
-                    Sparkline(
-                        values = person.history,
-                        // Muted instead of the usual bright cyan the moment
-                        // the tail stops moving — see [isSparklineFlat]'s own
-                        // doc for why that reads as "the market's closed,"
-                        // not a stuck/broken feed. The chip above still says
-                        // "TRACKING" — a real anchor exists, it's just not
-                        // moving right now.
-                        color = if (historyFlat) TT.inkMuted else TT.series,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(72.dp)
-                    )
-                    Spacer(Modifier.height(4.dp))
-                    Text(
-                        text = if (historyFlat) {
-                            "flat · market's closed right now"
-                        } else {
-                            "last ${person.history.size} closes"
-                        },
-                        color = TT.inkMuted,
-                        fontSize = 11.sp
-                    )
-                }
-            }
-
-            if (person.flight != null || person.vessel != null) {
-                item {
-                    WorldMapCard(
-                        countries = countries,
-                        pins = pins,
-                        focusRequest = mapFocusRequest
-                    )
-                }
-            }
-
-            person.flight?.let { flight ->
-                // Same gate as BoatCard below: nobody with no plane assigned
-                // at all needs a card that exists only to say "No aircraft
-                // mapped." — that's a card for nobody, not useful information.
-                item {
+                SheetLine()
+                WealthCard(
+                    person = person,
+                    projected = projected,
+                    threshold = threshold,
+                    isLive = state.isLive(person.id),
+                    driftPerSecond = state.driftPerSecond(person)
+                )
+                SheetLine()
+                SectionLabel(text = "MOVEMENTS", modifier = Modifier.padding(start = 12.dp, top = 10.dp, bottom = 6.dp))
+                WorldMapCard(countries = countries, pins = pins, focusRequest = mapFocusRequest)
+                SheetLine(subtle = true)
+                person.flight?.let { flight ->
                     FlightCard(
                         flight = flight,
+                        pin = flightPin,
                         nowSeconds = nowSeconds,
                         airports = airports,
-                        onFocusMap = flightPin?.let { pin ->
-                            { mapFocusPin = pin; mapFocusToken++ }
-                        }
+                        onFocusMap = flightPin?.let { pin -> { mapFocusPin = pin; mapFocusToken++ } }
                     )
-                }
-            }
-
-            person.vessel?.let { vessel ->
-                item {
+                } ?: NothingOnRecord("✈ No plane on record")
+                SheetLine(subtle = true)
+                person.vessel?.let { vessel ->
                     BoatCard(
                         vessel = vessel,
+                        pin = vesselPin,
                         nowSeconds = nowSeconds,
                         ports = ports,
-                        onFocusMap = vesselPin?.let { pin ->
-                            { mapFocusPin = pin; mapFocusToken++ }
-                        }
+                        onFocusMap = vesselPin?.let { pin -> { mapFocusPin = pin; mapFocusToken++ } }
                     )
-                }
-            }
-
-            run {
-                // trackedSeconds alone is the right gate for each strip —
-                // buildTimelineSegments/buildVesselTimelineSegments already
-                // render a correct, honest strip with zero stops (the whole
-                // window as "No signal") for a plane/boat that's been
-                // tracked but never yet caught parked/in port. Requiring
-                // recentStops too used to hide a strip for that case
-                // entirely, even though there was real tracked time to show.
-                // A strip only appears at all once something has actually
-                // been confirmed — see snapshot_worker.py's flight_status/
-                // vessel_status, which no longer start the tracking clock
-                // on an aircraft or vessel that's never once been located.
-                val flight = person.flight?.takeIf { it.trackedSeconds > 0 }
-                val vessel = person.vessel?.takeIf { it.trackedSeconds > 0 }
-                if (flight != null || vessel != null) {
-                    item { TimeByLocationCard(flight, vessel, nowSeconds, airports, ports) }
-                }
-            }
-
-            run {
-                // Same "only if there's something to show" gate as the 7-day
-                // card above, just keyed on lifetimeLocations instead of
-                // trackedSeconds — a person can have a nonzero 7-day tracked
-                // window (a plane/boat that's simply never been matched to a
-                // named airport/port yet) with nothing real to put in this
-                // card at all.
-                val flight = person.flight?.takeIf { it.lifetimeLocations.isNotEmpty() }
-                val vessel = person.vessel?.takeIf { it.lifetimeLocations.isNotEmpty() }
-                if (flight != null || vessel != null) {
-                    item { LifetimeLocationsCard(flight, vessel, nowSeconds, airports, ports) }
-                }
-            }
-
-            person.lifetimeNewsThemes.takeIf { it.isNotEmpty() }?.let { themes ->
-                item { LifetimeNewsThemesCard(themes) }
-            }
-
-            person.flight?.recentStops?.takeIf { it.isNotEmpty() }?.let { stops ->
-                item { LocationHistoryCard(stops, nowSeconds, airports) }
-            }
-
-            person.vessel?.recentStops?.takeIf { it.isNotEmpty() }?.let { stops ->
-                item { PortHistoryCard(stops, nowSeconds, ports) }
-            }
-
-            if (liveNews.isNotEmpty()) {
-                item { SectionLabel("IN THE NEWS") }
-                // Keyed on url (a real headline's one stable, unique field)
-                // instead of the default index — a live RSS poll can come
-                // back with headlines in a different order from the last
-                // one, and an index key would misattribute recomposition/
-                // animation state to whatever headline now happens to sit
-                // at that same position rather than following the story it
-                // actually belongs to.
-                items(liveNews, key = { it.url }) { newsItem ->
-                    NewsRow(newsItem, nowSeconds)
-                }
+                } ?: NothingOnRecord("⚓ No yacht on record")
+                SheetLine()
+                // distinctBy: two headlines with the same link are the same
+                // story. Only the top few are shown; the backend still reads
+                // (and classifies) more for the all-time theme tally.
+                NewsCard(liveNews.distinctBy { it.url }.take(SHOWN_HEADLINES), person.lifetimeNewsThemes, nowSeconds)
             }
         }
     }
 }
 
-/**
- * Photo + name + age/birthdate/residence + a link to the source of truth.
- *
- * Age is computed from [birthDate] at render time (see [Format.ageFrom]),
- * not stored anywhere — open the app again after a birthday and it's just
- * right, no new snapshot needed. [residence] is city/region only, same
- * granularity rule as everywhere else location shows up in this app (see
- * [FlightStatus.currentAirportIcao]) — never a street address, and left
- * blank rather than guessed when public reporting doesn't clearly agree on
- * where someone currently lives.
- *
- * The photo is optional — [Person.photoUrl] is only ever set when
- * Wikipedia's own thumbnail lives on Commons (free-license by policy), so a
- * missing photo here means no free image was available, not that we
- * skipped checking. Falls back to a plain initial disc so the layout never
- * has a hole where the photo would be.
- */
 /**
  * Opens a map centered on the town/region name itself — never a specific
  * address or a coordinate. [residence] is already never more precise than
@@ -424,432 +230,330 @@ private fun townMapUrl(residence: String): String {
 }
 
 /**
- * Full-width hero banner, not a small circular avatar — the photo itself is
- * the header. Identity text (name/company/age/residence/wikipedia) is laid
- * directly over the image inside a bottom scrim gradient rather than inside
- * any solid/opaque panel: a hard-edged background box would read as "text in
- * a box sitting on a photo," where the point here is text that belongs to
- * the photo. The gradient exists purely so light text stays legible against
- * whatever the photo's own bottom edge happens to look like — it is not a
- * design element in its own right, so it is never drawn without a photo
- * underneath needing it. Lines that used to be their own row (age/birth,
- * residence, Wikipedia) are compacted onto shared rows so the banner's own
- * height buys back space rather than spending it. [socialUrl] lives inside
- * this banner too — tucked into its own top-right corner using the same
- * [TT.panelShape] chamfer the banner itself is clipped to, rather than
- * sitting above it as a separate row that only added empty space — moved
- * off the end of [BiographyCard] so a profile's link-out sits with the rest
- * of its identity (photo, name) instead of several cards further down the
- * screen. It uses a translucent-black chip (the same style this banner's
- * old top-left back button used, before that button was removed 2026-09-24
- * as redundant against the phone's own system back), not [BiographyCard]'s
- * old bare-glyph treatment, because it has to stay legible over an
- * arbitrary photo instead of this app's own surface color.
- */
-/**
- * Renders [text] with a thin black outline behind the normal fill —
- * [PersonHeader]'s identity text (name/company/age) sits directly on top of
- * an arbitrary photo rather than this app's own surface color, and the
- * bottom scrim gradient alone doesn't guarantee contrast against every
- * photo's own bright/high-key areas.
+ * Who they are, in one card: photo, name, age, links out, the short bio and
+ * the way into their family history.
  *
- * Deliberately NOT built on Compose's text `drawStyle = Stroke(...)` — that
- * traces the glyph outline through Skia's font stroker, which follows every
- * curve of the letterforms and comes out blotchy and uneven at these small
- * sizes (tried it; it looked like a smudge, not an outline). Instead this
- * draws the same text several times in solid black, each nudged a hair in a
- * different direction, with the real white text on top — the classic "faux
- * outline" trick from games/overlays, and a much cleaner, crisper result
- * than stroking the glyphs themselves.
+ * Age is computed from [Person.birthDate] at render time (see
+ * [Format.ageFrom]), never stored. [Person.residence] is city/region only,
+ * same granularity rule as everywhere else location shows up in this app:
+ * never a street address, and left blank rather than guessed when public
+ * reporting doesn't clearly agree on where someone currently lives.
  */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun OutlinedWhiteText(
-    text: String,
-    fontSize: TextUnit,
-    modifier: Modifier = Modifier,
-    color: Color = Color.White,
-    fontWeight: FontWeight? = null,
-    fontFamily: FontFamily? = null,
-    letterSpacing: TextUnit = TextUnit.Unspecified
-) {
-    val nudge = 0.6.dp
-    val outlineColor = Color.Black.copy(alpha = 0.75f)
-    Box(modifier) {
-        listOf(-nudge to -nudge, 0.dp to -nudge, nudge to -nudge,
-               -nudge to 0.dp,                    nudge to 0.dp,
-               -nudge to nudge,  0.dp to nudge,   nudge to nudge
-        ).forEach { (dx, dy) ->
-            Text(
-                text = text,
-                fontSize = fontSize,
-                fontWeight = fontWeight,
-                fontFamily = fontFamily,
-                letterSpacing = letterSpacing,
-                color = outlineColor,
-                modifier = Modifier.offset(x = dx, y = dy)
-            )
-        }
-        Text(
-            text = text,
-            fontSize = fontSize,
-            fontWeight = fontWeight,
-            fontFamily = fontFamily,
-            letterSpacing = letterSpacing,
-            color = color
-        )
-    }
-}
-
-@Composable
-private fun PersonHeader(
-    name: String,
-    company: String,
-    photoUrl: String?,
-    wikipediaUrl: String?,
-    birthDate: String?,
-    residence: String?,
-    socialUrl: String?,
-    isAirborneNow: Boolean,
-    isUnderwayNow: Boolean
-) {
+private fun PersonHeader(person: Person, onOpenFamilyHistory: (() -> Unit)?) {
     val uriHandler = LocalUriHandler.current
-    val age = birthDate?.let { Format.ageFrom(it) }
-    val birthLabel = birthDate?.let { Format.birthDateLabel(it) }
-    val shape = TT.panelShape(14.dp)
+    val age = person.birthDate?.let { Format.ageFrom(it) }
+    val birthLabel = person.birthDate?.let { Format.dateLabel(it) }
+    // Strictly "moving right now" (AIRBORNE / UNDERWAY), not merely a
+    // confirmed-but-parked fix.
+    val moving = listOfNotNull(
+        "✈ AIRBORNE".takeIf { person.flight?.state == FlightState.AIRBORNE },
+        "⚓ UNDERWAY".takeIf { person.vessel?.state == VesselState.UNDERWAY }
+    )
 
-    Box(
-        modifier = Modifier
-            .fillMaxWidth()
-            .height(196.dp)
-            .clip(shape)
-            .border(1.5.dp, TT.border, shape)
-    ) {
-        if (photoUrl != null) {
-            // A same-tone placeholder keeps sickeningChromaticAberration()
-            // drawing *something* through its three-pass filter from the
-            // very first frame, so the effect never visibly "switches on"
-            // once the network image lands — the photo underneath simply
-            // resolves into an already-fringed, already-throbbing frame
-            // instead of popping in plain and gaining the effect a beat
-            // later.
-            AsyncImage(
-                model = photoUrl,
-                contentDescription = "Photo of $name",
-                contentScale = ContentScale.Crop,
-                // Default Crop alignment is dead center, which crops evenly
-                // top and bottom — fine for a landscape photo, but this
-                // banner is much wider than a typical portrait headshot, so
-                // filling it vertically crops a lot, and centering that crop
-                // reliably cuts into foreheads. Biased toward the top (with
-                // a little headroom rather than a hard top edge) instead,
-                // so the crop comes off the bottom — shoulders/chest, never
-                // anyone's head — no matter which photo loads here.
-                alignment = BiasAlignment(horizontalBias = 0f, verticalBias = -0.6f),
-                placeholder = ColorPainter(TT.surface),
-                // The "universal filter" — desaturates and tints every photo
-                // toward this app's own palette before anything else touches
-                // it, so a raw, naturally-lit photo doesn't clash with the
-                // near-monochrome cyan-on-black HUD around it. Applied here
-                // (baked into the image's own draw call) rather than as a
-                // Modifier, so sickeningChromaticAberration below draws the
-                // already-graded pixels three times, not the raw photo.
-                colorFilter = hudPhotoGradeFilter,
-                // Pull-and-release "reflex" gesture — drag the photo around
-                // inside its own frame, let go and it snaps back with a
-                // rubber-band spring. Placed before sickeningChromaticAberration
-                // so the glitch effect's three re-draws pick up wherever the
-                // photo currently sits, riding along with a pull instead of
-                // staying pinned in place under it. The frame's own .clip(shape)
-                // on the outer Box (not this Modifier chain) is what actually
-                // keeps a pull from spilling outside the header — see
-                // [rubberBandPhotoDrag]'s own doc comment.
-                modifier = Modifier
-                    .fillMaxSize()
-                    .rubberBandPhotoDrag()
-                    .sickeningChromaticAberration()
-            )
-        } else {
-            Box(
-                Modifier
-                    .fillMaxSize()
-                    .background(TT.surface),
-                contentAlignment = Alignment.Center
-            ) {
-                Text(
-                    text = name.firstOrNull()?.uppercase() ?: "?",
-                    color = TT.inkMuted,
-                    fontSize = 40.sp,
-                    fontWeight = FontWeight.SemiBold
-                )
-            }
-        }
-
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(114.dp)
-                .align(Alignment.BottomCenter)
-                .background(
-                    Brush.verticalGradient(
-                        colors = listOf(Color.Transparent, Color.Black.copy(alpha = 0.82f))
+    Column(Modifier.padding(12.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            PersonPhoto(name = person.name, photoUrl = person.photoUrl, size = 56.dp)
+            Spacer(Modifier.width(10.dp))
+            Column(Modifier.weight(1f)) {
+                if (moving.isNotEmpty()) {
+                    Text(
+                        text = moving.joinToString("  "),
+                        color = TT.inkPrimary,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold
                     )
-                )
-        )
-
-        Column(
-            modifier = Modifier
-                .align(Alignment.BottomStart)
-                .fillMaxWidth()
-                .then(
-                    // The header's own "in transit" light — added
-                    // 2026-09-24 alongside the strict AIRBORNE/UNDERWAY
-                    // check above, so the same glow that flags a row on the
-                    // list (TrackerScreen's PersonRow) is what someone
-                    // actually finds when they tap through to confirm it.
-                    // Placed on this Column (drawn after the photo and its
-                    // scrim, not before) so the wash shows up over the dark
-                    // gradient behind the readout text instead of getting
-                    // buried under the photo itself.
-                    if (isAirborneNow || isUnderwayNow) {
-                        Modifier.honeycombGlowCell(xFraction = 0.22f, yFraction = 0.06f, color = TT.warning)
-                    } else {
-                        Modifier
-                    }
-                )
-                .padding(horizontal = 14.dp, vertical = 10.dp)
-        ) {
-            // Readout treatment added 2026-09-24, once the photo itself got
-            // graded toward the app's own palette (see hudPhotoGradeFilter):
-            // the caption block underneath it was still set in a plain
-            // human caption style (proportional font, sentence-case "Lives
-            // in X"/"Born Y" prose), which read as a normal photo caption
-            // sitting on top of an otherwise fully HUD photo. Everything
-            // below is now built from the same vocabulary the rest of the
-            // screen already uses — TT.monoNumeric for anything that reads
-            // as a data field (exactly what the net worth ticker and tail
-            // numbers already do), uppercase+letter-spaced labels the way
-            // SectionLabel's "[ BIOGRAPHY ]" brackets do, TT.accentCyan for
-            // chrome/labels only, never for the subject's own name (that
-            // stays plain white — a label isn't data about the person, it's
-            // UI chrome, same rule the header/border-color split follows
-            // everywhere else).
-            // "[ SUBJECT ]" eyebrow removed 2026-09-24 (same pass as the
-            // in-transit indicator it used to sit next to) — the transit
-            // chip below is the only thing that still belongs on this line,
-            // and it now only renders — with its own Spacer(4.dp) — when
-            // there's actually something to say, rather than leaving a
-            // near-empty Row + gap sitting above the name on every profile
-            // that isn't currently AIRBORNE/UNDERWAY.
-            if (isAirborneNow || isUnderwayNow) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    if (isAirborneNow) {
-                        Text(
-                            text = "[ ✈ AIRBORNE ]",
-                            color = TT.warning,
-                            fontSize = 10.sp,
-                            fontFamily = TT.monoNumeric,
-                            fontWeight = FontWeight.SemiBold,
-                            letterSpacing = 1.sp
-                        )
-                    }
-                    if (isUnderwayNow) {
-                        if (isAirborneNow) {
-                            Spacer(Modifier.width(6.dp))
-                        }
-                        Text(
-                            text = "[ ⚓ UNDERWAY ]",
-                            color = TT.warning,
-                            fontSize = 10.sp,
-                            fontFamily = TT.monoNumeric,
-                            fontWeight = FontWeight.SemiBold,
-                            letterSpacing = 1.sp
-                        )
-                    }
                 }
-                Spacer(Modifier.height(4.dp))
-            }
-            OutlinedWhiteText(
-                text = name.uppercase(),
-                color = Color.White,
-                fontSize = 21.sp,
-                fontWeight = FontWeight.Bold,
-                fontFamily = TT.monoNumeric,
-                letterSpacing = 0.5.sp
-            )
-            OutlinedWhiteText(
-                text = "// ${company.uppercase()}",
-                color = TT.accentCyan,
-                fontSize = 12.sp,
-                fontFamily = TT.monoNumeric,
-                letterSpacing = 0.5.sp
-            )
-
-            if (age != null && birthLabel != null) {
-                Spacer(Modifier.height(4.dp))
-                OutlinedWhiteText(
-                    text = "AGE $age  ·  BORN ${birthLabel.uppercase()}",
-                    color = Color.White.copy(alpha = 0.7f),
-                    fontSize = 11.sp,
-                    fontFamily = TT.monoNumeric,
-                    letterSpacing = 0.3.sp
-                )
-            }
-
-            if (residence != null || wikipediaUrl != null) {
-                Spacer(Modifier.height(6.dp))
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    if (residence != null) {
-                        Text(
-                            text = "[ ${residence.uppercase()} ↗ ]",
-                            color = TT.accentCyan,
-                            fontSize = 11.sp,
-                            fontFamily = TT.monoNumeric,
-                            letterSpacing = 0.5.sp,
-                            modifier = Modifier
-                                .padding(2.dp)
-                                .clickable { uriHandler.openUri(townMapUrl(residence)) }
-                        )
-                    }
-                    if (residence != null && wikipediaUrl != null) {
-                        Spacer(Modifier.width(6.dp))
-                    }
-                    if (wikipediaUrl != null) {
-                        Text(
-                            text = "[ WIKIPEDIA ↗ ]",
-                            color = TT.accentCyan,
-                            fontSize = 11.sp,
-                            fontFamily = TT.monoNumeric,
-                            fontWeight = FontWeight.Medium,
-                            letterSpacing = 0.5.sp,
-                            modifier = Modifier
-                                .padding(2.dp)
-                                .clickable { uriHandler.openUri(wikipediaUrl) }
-                        )
-                    }
-                }
-            }
-        }
-
-        // The in-app back button that used to sit in the opposite (TopStart)
-        // corner was removed 2026-09-24 — the phone's own system back does
-        // the exact same thing everywhere in Android, so a second, on-screen
-        // control doing the same job was pure redundancy, not a real
-        // affordance (see FamilyHistoryScreen's matching note, which had the
-        // same button). This social button was originally styled to mirror
-        // that one for symmetry; kept the same 10dp-cut/translucent-black
-        // chip now that it's the only corner control left, rather than
-        // restyling it along with removing its former partner. Link-out
-        // only, never embedded (see [socialPlatformGlyph]'s own doc comment
-        // for why).
-        if (socialUrl != null) {
-            Box(
-                modifier = Modifier
-                    .align(Alignment.TopEnd)
-                    .clip(TT.panelShape(10.dp))
-                    .background(Color.Black.copy(alpha = 0.55f))
-                    .border(1.dp, TT.border, TT.panelShape(10.dp))
-                    .hudTouchable(cornerLength = 6.dp, cornerInset = 2.dp) { uriHandler.openUri(socialUrl) }
-                    .padding(horizontal = 14.dp, vertical = 8.dp)
-            ) {
                 Text(
-                    text = socialPlatformGlyph(socialUrl),
-                    color = TT.accentCyan,
+                    text = person.name.uppercase(),
+                    color = TT.inkPrimary,
                     fontSize = 16.sp,
                     fontWeight = FontWeight.Bold
                 )
+                Text(text = person.company, color = TT.inkMuted, fontSize = 11.sp)
+                if (age != null && birthLabel != null) {
+                    Text(text = "Age $age · born $birthLabel", color = TT.inkSecondary, fontSize = 11.sp)
+                }
             }
+        }
+
+        // Every link out on one line, wrapping only when it has to.
+        FlowRow(
+            modifier = Modifier.padding(top = 4.dp),
+            horizontalArrangement = Arrangement.spacedBy(14.dp)
+        ) {
+            person.residence?.let { place ->
+                LinkLine(text = "${PlaceNames.expand(place, "US")} ↗") { uriHandler.openUri(townMapUrl(place)) }
+            }
+            person.wikipediaUrl?.let { url ->
+                LinkLine(text = "Wikipedia ↗") { uriHandler.openUri(url) }
+            }
+            // Link out only, never embedded (see [socialPlatformName]).
+            person.socialUrl?.let { url ->
+                LinkLine(text = "${socialPlatformName(url)} ↗") { uriHandler.openUri(url) }
+            }
+        }
+
+        // One pre-written paragraph — see [Person.bio].
+        person.bio?.let { bio ->
+            Text(
+                text = bio,
+                color = TT.inkSecondary,
+                fontSize = 12.sp,
+                lineHeight = 16.sp,
+                modifier = Modifier.padding(top = 2.dp)
+            )
+        }
+
+        // A link only when there's a sourced entry behind it.
+        if (onOpenFamilyHistory != null) {
+            LinkLine(text = "Family history →", onClick = onOpenFamilyHistory)
+        } else {
+            Text(
+                text = "Family history · not researched yet",
+                color = TT.inkMuted,
+                fontSize = 11.sp,
+                modifier = Modifier.padding(vertical = 4.dp)
+            )
         }
     }
 }
 
-/** A HUD-bracket section header — "[ AIRCRAFT ]" in the chrome accent, not the data one. */
+/** A tappable line of text — links out end in "↗", links within the app in "→". */
 @Composable
-private fun SectionLabel(text: String) {
+private fun LinkLine(text: String, modifier: Modifier = Modifier, onClick: () -> Unit) {
     Text(
-        text = "[ $text ]",
-        color = TT.accentCyan,
+        text = text,
+        color = TT.accent,
         fontSize = 11.sp,
-        fontWeight = FontWeight.SemiBold,
-        letterSpacing = 1.5.sp,
-        modifier = Modifier.padding(top = 8.dp)
+        modifier = modifier
+            .clickable(onClick = onClick)
+            .padding(vertical = 4.dp)
+    )
+}
+
+/** A plain section heading — "AIRCRAFT", "LAST 7 DAYS"... */
+@Composable
+private fun SectionLabel(text: String, modifier: Modifier = Modifier) {
+    Text(
+        text = text,
+        color = TT.accent,
+        fontSize = 12.sp,
+        fontWeight = FontWeight.Bold,
+        letterSpacing = 1.sp,
+        modifier = modifier
+    )
+}
+
+/**
+ * A plane or boat card's top line: what it is, its tail number or name,
+ * and its status chip on the right.
+ */
+@Composable
+private fun CardTitle(title: String, pin: MapPin?, identity: String, verified: Boolean, chip: @Composable () -> Unit) {
+    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+        // The same shape as this vehicle's pin on the map above.
+        pin?.let { Text(text = pinSymbol(it) + " ", color = TT.inkPrimary, fontSize = 12.sp) }
+        SectionLabel(text = title)
+        Spacer(Modifier.width(8.dp))
+        Text(
+            text = if (verified) identity else "$identity · unverified",
+            color = TT.inkSecondary,
+            fontSize = 12.sp,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.weight(1f)
+        )
+        Spacer(Modifier.width(8.dp))
+        chip()
+    }
+}
+
+/**
+ * The bottom line of a plane or boat card: distance over the week and the
+ * last fix, plus the link to a full live tracker.
+ */
+@Composable
+private fun CardFooter(distanceNm: Double?, lastSeenEpoch: Long, nowSeconds: Long, liveMapUrl: String?) {
+    val uriHandler = LocalUriHandler.current
+    val facts = listOfNotNull(
+        distanceNm?.let { "${Format.nauticalMiles(it)} this week" },
+        // 0 means never actually seen, not a real 1970 timestamp.
+        lastSeenEpoch.takeIf { it > 0 }?.let { "seen ${Format.coarseElapsed(it, nowSeconds)} ago" }
+    )
+    if (facts.isEmpty() && liveMapUrl == null) return
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .padding(top = 6.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(
+            text = facts.joinToString(" · "),
+            color = TT.inkMuted,
+            fontSize = 11.sp,
+            modifier = Modifier.weight(1f)
+        )
+        liveMapUrl?.let { url ->
+            Spacer(Modifier.width(8.dp))
+            LinkLine(text = "Live map ↗") { uriHandler.openUri(url) }
+        }
+    }
+}
+
+/** The number this app is about: live net worth, today's move, and the road to $1T. */
+@Composable
+private fun WealthCard(
+    person: Person,
+    projected: Double,
+    threshold: Double,
+    isLive: Boolean,
+    driftPerSecond: Double
+) {
+    val over = projected >= threshold
+    Column(Modifier.padding(12.dp)) {
+        Text(
+            text = Format.exactUsd(projected),
+            color = TT.inkPrimary,
+            fontSize = 22.sp,
+            fontWeight = FontWeight.SemiBold
+        )
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            DayChange(deltaUsd = person.dayChangeUsd, suffix = " today")
+            if (isLive) {
+                Text(text = " · tracking", color = TT.inkMuted, fontSize = 12.sp)
+            }
+        }
+
+        Spacer(Modifier.height(8.dp))
+
+        ThresholdGauge(
+            progress = NetWorthEngine.progressToThreshold(projected, threshold),
+            leftLabel = "${Format.percentOf(projected, threshold)} of \$1T",
+            rightLabel = if (over) "over the line" else
+                "${Format.compactUsd(NetWorthEngine.shortfall(projected, threshold))} to go",
+            barColor = TT.series
+        )
+
+        Spacer(Modifier.height(8.dp))
+
+        // Nothing priced live means the figure is a hand-set estimate (see
+        // holdings.json): its line is flat, and drawn muted.
+        val estimateOnly = person.estimate != null && person.pricedTickers.isEmpty()
+        val historyFlat = isSparklineFlat(person.history)
+        Sparkline(
+            // Always a line, so every page looks the same: flat until there
+            // are two points to join.
+            values = person.history.takeIf { it.size >= 2 } ?: listOf(projected, projected),
+            // Muted the moment the tail stops moving — see [isSparklineFlat]
+            // for why that reads as "the market's closed," not a stuck feed.
+            color = if (historyFlat || estimateOnly) TT.inkMuted else TT.series,
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(32.dp)
+        )
+        Spacer(Modifier.height(2.dp))
+        Row(Modifier.fillMaxWidth()) {
+            Text(
+                text = when {
+                    estimateOnly -> "not priced live"
+                    historyFlat -> "flat · market's closed"
+                    else -> "past 7 days"
+                },
+                color = TT.inkMuted,
+                fontSize = 11.sp,
+                modifier = Modifier.weight(1f)
+            )
+            NetWorthEngine.secondsToThreshold(projected, driftPerSecond, threshold)?.let { secs ->
+                val eta = Format.roughDuration(secs)
+                Text(
+                    text = if (secs < 86_400L) "<1d to \$1T" else "~$eta to \$1T",
+                    color = TT.inkMuted,
+                    fontSize = 11.sp
+                )
+            }
+        }
+
+        // How the number is made: which stocks are priced live, and each
+        // hand-set part with where and when it comes from.
+        Text(
+            text = wealthBasis(person),
+            color = TT.inkMuted,
+            fontSize = 11.sp,
+            lineHeight = 15.sp,
+            modifier = Modifier.padding(top = 4.dp)
+        )
+    }
+}
+
+private fun wealthBasis(person: Person): String {
+    val estimate = person.estimate
+    return listOfNotNull(
+        person.pricedTickers.takeIf { it.isNotEmpty() }?.let { "Priced live: ${it.joinToString(", ")}" },
+        *estimate?.stakes.orEmpty().map { stake ->
+            "${stake.company}: " + String.format(Locale.UK, "%.2f%%", stake.stakeFraction * 100) +
+                " of ${Format.compactUsd(stake.valuationUsd)}" +
+                (stake.valuedOn?.let { " (valued ${Format.dateLabel(it) ?: it})" } ?: "")
+        }.toTypedArray(),
+        estimate?.otherUsd?.takeIf { it > 0 }?.let { "${estimate.otherLabel ?: "Other assets"}: ${Format.compactUsd(it)}" },
+        estimate?.let { e ->
+            listOfNotNull(e.source, "estimate", e.asOf?.let { Format.dateLabel(it) ?: it }).joinToString(" ")
+                .replace(" estimate ", " estimate, ") +
+                // A hand-set figure gets flagged once it's a few weeks old.
+                (e.asOf?.let { Format.daysSince(it) }?.takeIf { it >= 21 }?.let { " · $it days old, check for a newer figure" } ?: "")
+        }
+    ).joinToString("\n")
+}
+
+@Composable
+private fun NothingOnRecord(text: String) {
+    Text(
+        text = text,
+        color = TT.inkMuted,
+        fontSize = 12.sp,
+        modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)
     )
 }
 
 /**
  * The publishing rule, rendered.
  *
- * Departure and in-air status are shown live, and while the aircraft is
- * airborne the map above genuinely tracks a live ADS-B position (see
- * [rememberLiveFlightPosition]) — the "open live map" link below is an
- * additional external option (ADS-B Exchange's own full tracker), not the
- * only place a live fix exists anymore. Everything about position shown as
- * *text* on this card — current location, the 7-day history below — stays
- * airport granularity only, never a raw coordinate.
+ * While the aircraft is airborne the map above tracks a live ADS-B position
+ * (see [rememberLiveFlightPosition]); "Live map" is an extra external option
+ * (ADS-B Exchange's own tracker). Everything about position shown as *text*
+ * here stays airport granularity only, never a raw coordinate, except the
+ * approximate-area case spelled out below.
  */
 @Composable
 private fun FlightCard(
     flight: FlightStatus,
+    pin: MapPin?,
     nowSeconds: Long,
     airports: Map<String, AirportInfo>,
     onFocusMap: (() -> Unit)? = null
 ) {
-    val uriHandler = LocalUriHandler.current
-    fun label(icao: String) = airports[icao]?.label ?: icao
+    fun label(icao: String) = airports[icao]?.let(PlaceNames::of) ?: icao
+    fun ago(epoch: Long) = Format.coarseElapsed(epoch, nowSeconds) + " ago"
     // A plain UNKNOWN reading covers two very different situations — see
     // snapshot_worker.py's flight_status() `was == "AIRBORNE"` branch — and
     // only currentBucket, not state, tells them apart.
     val signalLost = flight.state == FlightState.UNKNOWN && flight.currentBucket == "SIGNAL_LOST"
-    // Option D's "the grid is a status layer, not just texture": flag this
-    // card with a status-coloured glow only when there's actually something
-    // worth flagging — a confirmed dropped signal (critical/red). A plain
-    // UNKNOWN with no bucket set yet is the everyday "haven't heard from it
-    // in a bit" gap — see currentBucket's own doc comment — not a real
-    // aircraft-in-use event, so it gets no glow at all, same as the calm
-    // AIRBORNE/ON_GROUND states.
-    val glowColor = when {
-        signalLost -> TT.critical
-        else -> null
-    }
-
+    // When the plane is sitting where it last landed, "when it landed" goes
+    // on the same line instead of a second row naming the same airport.
+    val landedHere = flight.state == FlightState.ON_GROUND &&
+        flight.arrivedIcao != null && flight.arrivedIcao == flight.currentAirportIcao
     Column(
         Modifier
             .fillMaxWidth()
-            // Whole card is the tap target when a map to focus exists, so
-            // hudTouchable goes first — see PersonRow's identical reasoning
-            // in TrackerScreen.kt — replacing the plain `clickable` this
-            // used to have.
-            .then(
-                if (onFocusMap != null) {
-                    Modifier.hudTouchable(
-                        cornerLength = 9.dp,
-                        cornerInset = 3.dp,
-                        elevation = 2.dp,
-                        shape = TT.panelShape(14.dp),
-                        onClick = onFocusMap
-                    )
-                } else {
-                    Modifier
-                }
-            )
-            .background(TT.surface, TT.panelShape(14.dp))
-            .then(
-                if (glowColor != null) {
-                    Modifier.honeycombGlowCell(xFraction = 0.16f, yFraction = 0.14f, color = glowColor)
-                } else {
-                    Modifier
-                }
-            )
-            .border(1.dp, TT.border, TT.panelShape(14.dp))
-            .padding(14.dp)
+            // The whole section is the tap target when a map to focus exists.
+            .then(if (onFocusMap != null) Modifier.clickable(onClick = onFocusMap) else Modifier)
+            .padding(horizontal = 12.dp, vertical = 8.dp)
     ) {
-        SectionLabel(text = "AIRCRAFT")
-
-        Spacer(Modifier.height(8.dp))
-
-        Row(verticalAlignment = Alignment.CenterVertically) {
+        CardTitle(title = "AIRCRAFT", pin = pin, identity = flight.tail, verified = flight.verified) {
             when {
                 flight.state == FlightState.AIRBORNE ->
-                    StatusChip(glyph = "✈", label = "AIRBORNE NOW", color = TT.warning)
+                    StatusChip(glyph = "✈", label = "AIRBORNE", color = TT.warning)
                 flight.state == FlightState.ON_GROUND ->
                     StatusChip(glyph = "●", label = "ON GROUND", color = TT.inkSecondary)
                 signalLost ->
@@ -857,250 +561,129 @@ private fun FlightCard(
                 else ->
                     StatusChip(glyph = "?", label = "NO SIGNAL", color = TT.inkMuted)
             }
-            Spacer(Modifier.width(8.dp))
-            Text(
-                text = flight.tail,
-                color = TT.inkSecondary,
-                fontSize = 13.sp,
-                fontFamily = FontFamily.Monospace
-            )
-            if (!flight.verified) {
-                Spacer(Modifier.width(8.dp))
-                NoteChip(text = "unverified", color = TT.warning)
-            }
         }
 
-        Spacer(Modifier.height(10.dp))
+        Spacer(Modifier.height(4.dp))
 
+        // No "Now" row when it would only repeat the status chip.
         DetailRow(
-            label = "Current",
+            label = "Now",
             value = when {
                 flight.state == FlightState.ON_GROUND && flight.currentAirportIcao != null ->
-                    label(flight.currentAirportIcao)
-                // Added 2026-09-23: a real fix landed, but no known airport
-                // nearby — see FlightStatus.currentLat's doc comment. Shown
-                // with the same "approximate" caveat the map pin carries,
-                // rather than silently falling through to "No signal" below
-                // for a position that was, in fact, caught.
+                    label(flight.currentAirportIcao) +
+                        (flight.arrivedAtEpoch?.takeIf { landedHere }?.let { " · landed ${ago(it)}" } ?: "")
+                // A real fix with no known airport nearby — see
+                // FlightStatus.currentLat. Same caveat the dashed map pin carries.
                 flight.state == FlightState.ON_GROUND && flight.generalLocation != null ->
-                    "${flight.generalLocation} (approximate — no known airport nearby)"
-                flight.state == FlightState.AIRBORNE -> "In the air — no fixed location"
+                    "${flight.generalLocation} (approx.)"
+                flight.state == FlightState.AIRBORNE -> pin?.caption
                 signalLost && flight.probableIcao != null ->
                     "Possibly landed near ${label(flight.probableIcao)} (unconfirmed)"
-                signalLost -> "Possibly landed — location unclear (unconfirmed)"
-                else -> "No signal"
+                signalLost -> "Possibly landed, place unclear (unconfirmed)"
+                else -> null
             }
         )
 
-        // The raw fix behind the "(approximate — no known airport nearby)"
-        // line above, spelled out as text. The number was already being
-        // used to place the dashed "approximate" pin on the map (see
-        // flightMapPin) — this doesn't surface it anywhere new, just also
-        // renders as text where a pin already showed it. Same lifetime as
-        // the fields it reads: current-pass only, never persisted.
+        // The raw fix behind "(approx.)", as text. It's already placing the
+        // dashed pin on the map; current pass only, never persisted.
         if (flight.state == FlightState.ON_GROUND && flight.currentLat != null && flight.currentLon != null) {
-            DetailRow(
-                label = "Coordinates",
-                value = Format.coordinate(flight.currentLat, flight.currentLon)
-            )
+            DetailRow(label = "Fix", value = Format.coordinate(flight.currentLat, flight.currentLon))
         }
 
-        Spacer(Modifier.height(8.dp))
-
-        flight.departedIcao?.let { dep ->
+        // "From" is left out only when it would just repeat "Now": same
+        // airport, same time.
+        flight.departedIcao?.takeIf { dep ->
+            !(landedHere && dep == flight.currentAirportIcao &&
+                flight.departedAtEpoch?.let(::ago) == flight.arrivedAtEpoch?.let(::ago))
+        }?.let { dep ->
             DetailRow(
-                label = "Departed",
-                value = label(dep) + (flight.departedAtEpoch?.let {
-                    "  ·  ${Format.elapsedSince(it, nowSeconds)} ago"
-                } ?: "")
+                label = "From",
+                value = label(dep) + (flight.departedAtEpoch?.let { " · ${ago(it)}" } ?: "")
             )
         }
 
         when (flight.state) {
-            FlightState.AIRBORNE -> {
-                Spacer(Modifier.height(8.dp))
-                if (flight.estimatedDestinationIcao != null) {
-                    DetailRow(label = "Heading toward", value = label(flight.estimatedDestinationIcao) + " (est.)")
-                } else {
-                    Text(
-                        text = "In flight — course doesn't point clearly at a major airport yet.",
-                        color = TT.inkMuted,
-                        fontSize = 13.sp
-                    )
-                }
-            }
-
-            FlightState.ON_GROUND -> {
+            FlightState.AIRBORNE -> DetailRow(
+                label = "To",
+                value = flight.estimatedDestinationIcao?.let { label(it) + " (est.)" } ?: "unclear yet"
+            )
+            FlightState.ON_GROUND -> if (!landedHere) {
                 flight.arrivedIcao?.let { arr ->
                     DetailRow(
-                        label = "Arrived",
-                        value = label(arr) + (flight.arrivedAtEpoch?.let {
-                            "  ·  ${Format.agoShort(it, nowSeconds)}"
-                        } ?: "")
+                        label = "Landed",
+                        value = label(arr) + (flight.arrivedAtEpoch?.let { " · ${ago(it)}" } ?: "")
                     )
                 }
             }
-
             FlightState.UNKNOWN -> Unit
         }
 
-        // Straight-line total across confirmed airport-to-airport legs on
-        // record (see flightTripDistanceNm's doc comment) — an honest, if
-        // approximate, answer to "how far has this actually flown lately,"
-        // built entirely from history already collected. Null (nothing
-        // shown) until at least two stops in the trailing window resolve to
-        // a known airport with coordinates.
-        flightTripDistanceNm(flight.recentStops, airports)?.let { nm ->
-            Spacer(Modifier.height(8.dp))
-            DetailRow(label = "Distance (7d)", value = Format.nauticalMiles(nm))
-        }
-
-        // lastSeenEpoch == 0 means "never actually seen" (an identity with no
-        // position data at all), not a real 1970 timestamp — showing it as
-        // an elapsed time would read as real data when it isn't any.
-        if (flight.lastSeenEpoch > 0) {
-            Spacer(Modifier.height(8.dp))
-            DetailRow(
-                label = "Last seen",
-                value = Format.agoShort(flight.lastSeenEpoch, nowSeconds)
-            )
-        }
-
-        flight.liveMapUrl?.let { url ->
-            Spacer(Modifier.height(10.dp))
-            Text(
-                text = "Open live map ↗",
-                color = TT.accentCyan,
-                fontSize = 13.sp,
-                fontWeight = FontWeight.Medium,
-                modifier = Modifier
-                    .padding(2.dp)
-                    .clickable { uriHandler.openUri(url) }
-            )
-        }
-    }
-}
-
-/**
- * Airport-level, 7 days, newest first. Deliberately not a coordinate trail —
- * see [AirportStop] and the README's Flights section for why.
- */
-@Composable
-private fun LocationHistoryCard(stops: List<AirportStop>, nowSeconds: Long, airports: Map<String, AirportInfo>) {
-    Column(
-        Modifier
-            .fillMaxWidth()
-            .background(TT.surface, TT.panelShape(14.dp))
-            .border(1.dp, TT.border, TT.panelShape(14.dp))
-            .padding(14.dp)
-    ) {
-        SectionLabel(text = "LAST 7 DAYS")
-
-        Spacer(Modifier.height(8.dp))
-
-        stops.forEachIndexed { index, stop ->
-            Row(
-                Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    text = airports[stop.icao]?.label ?: stop.icao,
-                    color = TT.inkPrimary,
-                    fontSize = 14.sp,
-                    fontWeight = FontWeight.Medium,
-                    modifier = Modifier.width(108.dp)
+        MovementPlaces(
+            trackedSeconds = flight.trackedSeconds,
+            segments = if (flight.trackedSeconds > 0) {
+                buildTimelineSegments(
+                    recentStops = flight.recentStops,
+                    flightState = flight.state,
+                    currentBucket = flight.currentBucket,
+                    trackedSeconds = flight.trackedSeconds,
+                    nowEpoch = nowSeconds,
+                    airports = airports
                 )
-                Column(Modifier.weight(1f)) {
-                    Text(
-                        text = "arrived ${Format.agoShort(stop.arrivedAtEpoch, nowSeconds)}",
-                        color = TT.inkSecondary,
-                        fontSize = 12.sp
-                    )
-                    Text(
-                        text = stop.departedAtEpoch?.let {
-                            "left ${Format.agoShort(it, nowSeconds)}"
-                        } ?: "still there",
-                        color = if (stop.departedAtEpoch == null) TT.good else TT.inkMuted,
-                        fontSize = 12.sp
-                    )
-                }
-            }
-            if (index != stops.lastIndex) {
-                Spacer(Modifier.height(8.dp))
-            }
-        }
+            } else {
+                emptyList()
+            },
+            stops = flight.recentStops.map { StopLine(it.icao, it.arrivedAtEpoch, it.departedAtEpoch) },
+            lifetime = flight.lifetimeLocations,
+            labelFor = ::label,
+            foldLabel = bucketLabel("OTHER", airports),
+            nowShowsCode = flight.currentAirportIcao.takeIf { landedHere },
+            nowSeconds = nowSeconds
+        )
+
+        // Straight-line total across confirmed airport-to-airport legs (see
+        // flightTripDistanceNm) — null until two stops resolve to known airports.
+        CardFooter(
+            distanceNm = flightTripDistanceNm(flight.recentStops, airports),
+            lastSeenEpoch = flight.lastSeenEpoch,
+            nowSeconds = nowSeconds,
+            liveMapUrl = flight.liveMapUrl
+        )
     }
 }
 
 /**
  * The maritime mirror of [FlightCard] — same publishing rule, same
  * granularity limits. The one thing planes don't have: a self-reported
- * destination (and, added 2026-09-24, an ETA) straight from the vessel's
- * own AIS broadcast. It's shown, but clearly labeled as crew-entered and
- * unverified — it's routinely blank, stale, or informal shorthand, nothing
- * like a filed flight plan.
+ * destination (and ETA) straight from the vessel's own AIS broadcast, shown
+ * but clearly labeled as crew-entered — it's routinely blank, stale, or
+ * informal shorthand, nothing like a filed flight plan.
  */
 @Composable
 private fun BoatCard(
     vessel: VesselStatus,
+    pin: MapPin?,
     nowSeconds: Long,
     ports: Map<String, PortInfo>,
     onFocusMap: (() -> Unit)? = null
 ) {
-    val uriHandler = LocalUriHandler.current
-    fun label(unlocode: String) = ports[unlocode]?.label ?: unlocode
-    // Added 2026-09-24: vessels now have the same "confirmed dropped signal"
-    // distinction flights do — see FlightCard's signalLost and
-    // VesselStatus.currentBucket's doc comment. Same rule as FlightCard's
-    // glowColor: flag this card only when there's actually something worth
-    // flagging (a confirmed SIGNAL_LOST), not for the everyday "haven't
-    // heard from it in a bit" gap — AIS coverage here is shore-based, so an
-    // ordinary ocean crossing can go days unheard with nothing wrong at
-    // all, and that's an even worse reason to glow amber than a plane's
-    // equivalent short gap already was. A previous version of this card
-    // glowed amber for any plain UNKNOWN reading; that's the one asymmetry
-    // between the two cards this removes — quiet unless it's actually lost.
+    fun label(unlocode: String) = ports[unlocode]?.let(PlaceNames::of) ?: unlocode
+    fun ago(epoch: Long) = Format.coarseElapsed(epoch, nowSeconds) + " ago"
+    // SIGNAL LOST only for a confirmed loss, not the everyday "haven't heard
+    // from it in a bit" gap: AIS coverage is shore-based, so an ordinary
+    // ocean crossing can go days unheard with nothing wrong.
     val signalLost = vessel.state == VesselState.UNKNOWN && vessel.currentBucket == "SIGNAL_LOST"
-    val glowColor = when {
-        signalLost -> TT.critical
-        else -> null
-    }
-
+    val arrivedHere = vessel.state == VesselState.IN_PORT &&
+        vessel.arrivedPortUnlocode != null && vessel.arrivedPortUnlocode == vessel.currentPortUnlocode
     Column(
         Modifier
             .fillMaxWidth()
-            .then(
-                if (onFocusMap != null) {
-                    Modifier.hudTouchable(
-                        cornerLength = 9.dp,
-                        cornerInset = 3.dp,
-                        elevation = 2.dp,
-                        shape = TT.panelShape(14.dp),
-                        onClick = onFocusMap
-                    )
-                } else {
-                    Modifier
-                }
-            )
-            .background(TT.surface, TT.panelShape(14.dp))
-            .then(
-                if (glowColor != null) {
-                    Modifier.honeycombGlowCell(xFraction = 0.16f, yFraction = 0.14f, color = glowColor)
-                } else {
-                    Modifier
-                }
-            )
-            .border(1.dp, TT.border, TT.panelShape(14.dp))
-            .padding(14.dp)
+            .then(if (onFocusMap != null) Modifier.clickable(onClick = onFocusMap) else Modifier)
+            .padding(horizontal = 12.dp, vertical = 8.dp)
     ) {
-        SectionLabel(text = "VESSEL")
-
-        Spacer(Modifier.height(8.dp))
-
-        Row(verticalAlignment = Alignment.CenterVertically) {
+        CardTitle(title = "VESSEL", pin = pin, identity = vessel.name, verified = vessel.verified) {
             when {
                 vessel.state == VesselState.UNDERWAY ->
-                    StatusChip(glyph = "⚓", label = "UNDERWAY NOW", color = TT.warning)
+                    StatusChip(glyph = "⚓", label = "UNDERWAY", color = TT.warning)
                 vessel.state == VesselState.IN_PORT ->
                     StatusChip(glyph = "●", label = "IN PORT", color = TT.inkSecondary)
                 signalLost ->
@@ -1108,357 +691,101 @@ private fun BoatCard(
                 else ->
                     StatusChip(glyph = "?", label = "NO SIGNAL", color = TT.inkMuted)
             }
-            Spacer(Modifier.width(8.dp))
-            Text(
-                text = vessel.name,
-                color = TT.inkSecondary,
-                fontSize = 13.sp
-            )
-            if (!vessel.verified) {
-                Spacer(Modifier.width(8.dp))
-                NoteChip(text = "unverified", color = TT.warning)
-            }
         }
 
-        Spacer(Modifier.height(10.dp))
+        Spacer(Modifier.height(4.dp))
 
+        // No "Now" row when it would only repeat the status chip.
         DetailRow(
-            label = "Current",
+            label = "Now",
             value = when {
                 vessel.state == VesselState.IN_PORT && vessel.currentPortUnlocode != null ->
-                    label(vessel.currentPortUnlocode)
-                // Added 2026-09-23: a real AIS fix (moored or underway) that
-                // didn't resolve to a known port — see VesselStatus.currentLat's
-                // doc comment. Checked before the plain UNDERWAY branch below
-                // so a real underway position is shown when we have one,
-                // rather than always reading "no fixed location".
-                vessel.generalLocation != null ->
-                    "${vessel.generalLocation} (approximate — no known port nearby)"
-                vessel.state == VesselState.UNDERWAY -> "At sea — no fixed location"
+                    label(vessel.currentPortUnlocode) +
+                        (vessel.arrivedAtEpoch?.takeIf { arrivedHere }?.let { " · arrived ${ago(it)}" } ?: "")
+                // A real AIS fix (moored or underway) with no known port
+                // nearby — see VesselStatus.currentLat. Checked before plain
+                // UNDERWAY so a real position wins over "At sea".
+                vessel.generalLocation != null -> "${vessel.generalLocation} (approx.)"
                 signalLost && vessel.probablePortUnlocode != null ->
                     "Possibly arrived near ${label(vessel.probablePortUnlocode)} (unconfirmed)"
-                signalLost -> "Possibly arrived — location unclear (unconfirmed)"
-                else -> "No signal"
+                signalLost -> "Possibly arrived, place unclear (unconfirmed)"
+                else -> null
             }
         )
 
-        // The maritime mirror of FlightCard's identical addition above — the
-        // raw fix behind "(approximate — no known port nearby)", spelled out
-        // as text next to the same number already placing the dashed
-        // "approximate" pin (see vesselMapPin). No state check needed here,
-        // same as the generalLocation branch just above: currentLat/currentLon
-        // are only ever set (IN_PORT or UNDERWAY) when there's a real fix
-        // with no port match — see VesselStatus.currentLat's doc comment.
+        // The raw fix behind "(approx.)" — only ever set when there's a real
+        // fix with no port match (see VesselStatus.currentLat).
         if (vessel.currentLat != null && vessel.currentLon != null) {
-            DetailRow(
-                label = "Coordinates",
-                value = Format.coordinate(vessel.currentLat, vessel.currentLon)
-            )
+            DetailRow(label = "Fix", value = Format.coordinate(vessel.currentLat, vessel.currentLon))
         }
 
-        Spacer(Modifier.height(8.dp))
-
-        vessel.departedPortUnlocode?.let { dep ->
+        // Same rule as the plane: no "From" that only repeats "Now".
+        vessel.departedPortUnlocode?.takeIf { dep ->
+            !(arrivedHere && dep == vessel.currentPortUnlocode &&
+                vessel.departedAtEpoch?.let(::ago) == vessel.arrivedAtEpoch?.let(::ago))
+        }?.let { dep ->
             DetailRow(
-                label = "Departed",
-                value = label(dep) + (vessel.departedAtEpoch?.let {
-                    "  ·  ${Format.elapsedSince(it, nowSeconds)} ago"
-                } ?: "")
+                label = "From",
+                value = label(dep) + (vessel.departedAtEpoch?.let { " · ${ago(it)}" } ?: "")
             )
         }
 
         when (vessel.state) {
-            VesselState.UNDERWAY -> {
-                Spacer(Modifier.height(8.dp))
-                // Self-reported beats estimated when both exist — crew-entered
-                // text beats a course guess, same priority a confirmed
-                // arrivedIcao gets over FlightStatus's own estimate. Falls
-                // through to the live heading-based guess (the maritime
-                // mirror of FlightCard's "Heading toward X (est.)" below)
-                // only when nothing was self-reported, closing the asymmetry
-                // where boats never got a live destination guess the way
-                // planes always have while airborne.
-                when {
-                    vessel.selfReportedDestination != null -> {
-                        DetailRow(
-                            label = "Destination",
-                            value = vessel.selfReportedDestination + " (self-reported)" +
-                                (vessel.selfReportedEta?.let { "  ·  ETA $it" } ?: "")
-                        )
-                    }
-                    vessel.estimatedDestinationPortUnlocode != null -> {
-                        DetailRow(
-                            label = "Heading toward",
-                            value = label(vessel.estimatedDestinationPortUnlocode) + " (est.)"
-                        )
-                    }
-                    else -> {
-                        Text(
-                            text = "At sea — course doesn't point clearly at a known port yet.",
-                            color = TT.inkMuted,
-                            fontSize = 13.sp
-                        )
-                    }
+            // Self-reported beats estimated when both exist: crew-entered
+            // text beats a course guess.
+            VesselState.UNDERWAY -> DetailRow(
+                label = "To",
+                value = when {
+                    vessel.selfReportedDestination != null ->
+                        vessel.selfReportedDestination + " (self-reported)" +
+                            (vessel.selfReportedEta?.let { " · ETA $it" } ?: "")
+                    vessel.estimatedDestinationPortUnlocode != null ->
+                        label(vessel.estimatedDestinationPortUnlocode) + " (est.)"
+                    else -> "unclear yet"
                 }
-            }
-
-            VesselState.IN_PORT -> {
+            )
+            VesselState.IN_PORT -> if (!arrivedHere) {
                 vessel.arrivedPortUnlocode?.let { arr ->
                     DetailRow(
                         label = "Arrived",
-                        value = label(arr) + (vessel.arrivedAtEpoch?.let {
-                            "  ·  ${Format.agoShort(it, nowSeconds)}"
-                        } ?: "")
+                        value = label(arr) + (vessel.arrivedAtEpoch?.let { " · ${ago(it)}" } ?: "")
                     )
                 }
             }
-
             VesselState.UNKNOWN -> Unit
         }
 
-        // The maritime mirror of FlightCard's identical addition above — see
-        // vesselTripDistanceNm's doc comment.
-        vesselTripDistanceNm(vessel.recentStops, ports)?.let { nm ->
-            Spacer(Modifier.height(8.dp))
-            DetailRow(label = "Distance (7d)", value = Format.nauticalMiles(nm))
-        }
-
-        if (vessel.lastSeenEpoch > 0) {
-            Spacer(Modifier.height(8.dp))
-            DetailRow(
-                label = "Last seen",
-                value = Format.agoShort(vessel.lastSeenEpoch, nowSeconds)
-            )
-        }
-
-        vessel.liveMapUrl?.let { url ->
-            Spacer(Modifier.height(10.dp))
-            Text(
-                text = "Open live map ↗",
-                color = TT.accentCyan,
-                fontSize = 13.sp,
-                fontWeight = FontWeight.Medium,
-                modifier = Modifier
-                    .padding(2.dp)
-                    .clickable { uriHandler.openUri(url) }
-            )
-        }
-    }
-}
-
-/**
- * Port-level, 7 days, newest first — the maritime mirror of
- * [LocationHistoryCard]. Never a coordinate trail; see [VesselStatus].
- */
-@Composable
-private fun PortHistoryCard(stops: List<PortStop>, nowSeconds: Long, ports: Map<String, PortInfo>) {
-    Column(
-        Modifier
-            .fillMaxWidth()
-            .background(TT.surface, TT.panelShape(14.dp))
-            .border(1.dp, TT.border, TT.panelShape(14.dp))
-            .padding(14.dp)
-    ) {
-        SectionLabel(text = "LAST 7 DAYS (PORTS)")
-
-        Spacer(Modifier.height(8.dp))
-
-        stops.forEachIndexed { index, stop ->
-            Row(
-                Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    text = ports[stop.unlocode]?.label ?: stop.unlocode,
-                    color = TT.inkPrimary,
-                    fontSize = 14.sp,
-                    fontWeight = FontWeight.Medium,
-                    modifier = Modifier.width(108.dp)
+        MovementPlaces(
+            trackedSeconds = vessel.trackedSeconds,
+            segments = if (vessel.trackedSeconds > 0) {
+                buildVesselTimelineSegments(
+                    recentStops = vessel.recentStops,
+                    vesselState = vessel.state,
+                    currentBucket = vessel.currentBucket,
+                    trackedSeconds = vessel.trackedSeconds,
+                    nowEpoch = nowSeconds,
+                    ports = ports
                 )
-                Column(Modifier.weight(1f)) {
-                    Text(
-                        text = "arrived ${Format.agoShort(stop.arrivedAtEpoch, nowSeconds)}",
-                        color = TT.inkSecondary,
-                        fontSize = 12.sp
-                    )
-                    Text(
-                        text = stop.departedAtEpoch?.let {
-                            "left ${Format.agoShort(it, nowSeconds)}"
-                        } ?: "still there",
-                        color = if (stop.departedAtEpoch == null) TT.good else TT.inkMuted,
-                        fontSize = 12.sp
-                    )
-                }
-            }
-            if (index != stops.lastIndex) {
-                Spacer(Modifier.height(8.dp))
-            }
-        }
-    }
-}
-
-/**
- * All-time counterpart to [TimeByLocationCard] — a specific airport/port's
- * running total that never resets or ages out the way the 7-day breakdown
- * above does (see [FlightStatus.lifetimeLocations]/[VesselStatus.lifetimeLocations]
- * and snapshot_worker.py's "lifetime tally" blocks for how it's
- * accumulated). Reuses the same stacked "Plane"/"Boat" framing as
- * [TimeByLocationCard] so a person tracked on both keeps one consistent card
- * style instead of two rival designs. Either half is left out entirely when
- * that side has no confirmed location yet, same as [TimeByLocationCard].
- */
-@Composable
-private fun LifetimeLocationsCard(
-    flight: FlightStatus?,
-    vessel: VesselStatus?,
-    nowSeconds: Long,
-    airports: Map<String, AirportInfo>,
-    ports: Map<String, PortInfo>
-) {
-    Column(
-        Modifier
-            .fillMaxWidth()
-            .background(TT.surface, TT.panelShape(14.dp))
-            .border(1.dp, TT.border, TT.panelShape(14.dp))
-            .padding(14.dp)
-    ) {
-        SectionLabel(text = "ALL-TIME LOCATIONS")
-
-        if (flight != null) {
-            Spacer(Modifier.height(10.dp))
-            Text(text = "Plane", color = TT.inkSecondary, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
-            Spacer(Modifier.height(6.dp))
-            flight.lifetimeLocations.forEachIndexed { index, loc ->
-                LifetimeLocationRow(
-                    label = airports[loc.location]?.label ?: loc.location,
-                    totalSeconds = loc.totalSeconds,
-                    lastSeenEpoch = loc.lastSeenEpoch,
-                    nowSeconds = nowSeconds
-                )
-                if (index != flight.lifetimeLocations.lastIndex) {
-                    Spacer(Modifier.height(8.dp))
-                }
-            }
-        }
-
-        if (vessel != null) {
-            Spacer(Modifier.height(if (flight != null) 16.dp else 10.dp))
-            Text(text = "Boat", color = TT.inkSecondary, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
-            Spacer(Modifier.height(6.dp))
-            vessel.lifetimeLocations.forEachIndexed { index, loc ->
-                LifetimeLocationRow(
-                    label = ports[loc.location]?.label ?: loc.location,
-                    totalSeconds = loc.totalSeconds,
-                    lastSeenEpoch = loc.lastSeenEpoch,
-                    nowSeconds = nowSeconds
-                )
-                if (index != vessel.lifetimeLocations.lastIndex) {
-                    Spacer(Modifier.height(8.dp))
-                }
-            }
-        }
-    }
-}
-
-/** One row inside [LifetimeLocationsCard] — a place name plus its running lifetime total. */
-@Composable
-private fun LifetimeLocationRow(label: String, totalSeconds: Long, lastSeenEpoch: Long, nowSeconds: Long) {
-    Row(
-        Modifier.fillMaxWidth(),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Text(
-            text = label,
-            color = TT.inkPrimary,
-            fontSize = 14.sp,
-            fontWeight = FontWeight.Medium,
-            modifier = Modifier.weight(1f)
+            } else {
+                emptyList()
+            },
+            stops = vessel.recentStops.map { StopLine(it.unlocode, it.arrivedAtEpoch, it.departedAtEpoch) },
+            lifetime = vessel.lifetimeLocations,
+            labelFor = ::label,
+            foldLabel = vesselBucketLabel("OTHER", ports),
+            nowShowsCode = vessel.currentPortUnlocode.takeIf { arrivedHere },
+            nowSeconds = nowSeconds
         )
-        Column(horizontalAlignment = Alignment.End) {
-            Text(
-                text = Format.duration(totalSeconds),
-                color = TT.inkPrimary,
-                fontSize = 13.sp,
-                fontWeight = FontWeight.Medium
-            )
-            Text(
-                text = "last ${Format.agoShort(lastSeenEpoch, nowSeconds)}",
-                color = TT.inkMuted,
-                fontSize = 11.sp
-            )
-        }
+
+        CardFooter(
+            distanceNm = vesselTripDistanceNm(vessel.recentStops, ports),
+            lastSeenEpoch = vessel.lastSeenEpoch,
+            nowSeconds = nowSeconds,
+            liveMapUrl = vessel.liveMapUrl
+        )
     }
 }
 
-/**
- * All-time counterpart to the per-headline theme chips in "IN THE NEWS" —
- * how many distinct headlines have ever been classified into each theme for
- * this person, permanently (see [Person.lifetimeNewsThemes] and
- * snapshot_worker.py's `accumulate_lifetime_news_themes()` for exactly how
- * this accumulates, and why it's a count of distinct headlines rather than a
- * count of classification passes). [newsThemeColor] keeps each bar's color
- * consistent with that same theme's per-headline chip. Bar width is relative
- * to this person's own largest theme, not a fixed/shared scale across
- * people — the point of this card is "what does this person mostly get
- * covered for", not a cross-person comparison.
- *
- * Left out of the screen entirely (see the call site) when
- * [Person.lifetimeNewsThemes] is empty — nothing classified yet for this
- * person, same "absent, not a zeroed-out placeholder" treatment as
- * [LifetimeLocationsCard]'s flight/vessel halves.
- */
-@Composable
-private fun LifetimeNewsThemesCard(themes: List<NewsThemeShare>) {
-    val maxCount = themes.maxOf { it.count }
-    Column(
-        Modifier
-            .fillMaxWidth()
-            .background(TT.surface, TT.panelShape(14.dp))
-            .border(1.dp, TT.border, TT.panelShape(14.dp))
-            .padding(14.dp)
-    ) {
-        SectionLabel(text = "ALL-TIME NEWS THEMES")
-        Spacer(Modifier.height(10.dp))
-        themes.forEachIndexed { index, share ->
-            LifetimeNewsThemeRow(share = share, maxCount = maxCount)
-            if (index != themes.lastIndex) {
-                Spacer(Modifier.height(10.dp))
-            }
-        }
-    }
-}
-
-/** One row inside [LifetimeNewsThemesCard] — a theme name, its all-time count, and a proportional bar. */
-@Composable
-private fun LifetimeNewsThemeRow(share: NewsThemeShare, maxCount: Int) {
-    val color = newsThemeColor(share.theme)
-    Column(Modifier.fillMaxWidth()) {
-        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            Text(
-                text = share.theme,
-                color = TT.inkPrimary,
-                fontSize = 13.sp,
-                fontWeight = FontWeight.Medium,
-                modifier = Modifier.weight(1f)
-            )
-            Text(text = share.count.toString(), color = TT.inkMuted, fontSize = 12.sp)
-        }
-        Spacer(Modifier.height(4.dp))
-        Box(
-            Modifier
-                .fillMaxWidth()
-                .height(6.dp)
-                .background(TT.border, TT.panelShape(3.dp))
-        ) {
-            Box(
-                Modifier
-                    .fillMaxWidth(fraction = share.count.toFloat() / maxCount.toFloat())
-                    .height(6.dp)
-                    .background(color, TT.panelShape(3.dp))
-            )
-        }
-    }
-}
 
 /**
  * The map's plane pin, built entirely from fields already shown as text on
@@ -1580,6 +907,9 @@ private fun rememberLiveNews(query: String, seedNews: List<NewsItem>): List<News
 
 private const val LIVE_NEWS_POLL_MILLIS = 5 * 60_000L
 
+/** How many headlines a person's page shows. */
+private const val SHOWN_HEADLINES = 3
+
 /**
  * Straight-line ("great-circle") distance between two points, nautical
  * miles — the same haversine formula backend/snapshot_worker.py's own
@@ -1641,7 +971,7 @@ private fun flightMapPin(
 
     if (livePosition != null) {
         val speedLabel = livePosition.groundSpeedMps
-            ?.let { mps -> " — ~${(mps * 1.94384).roundToInt()} kt" }
+            ?.let { mps -> "~${(mps * 1.94384).roundToInt()} kt " }
             .orEmpty()
         return MapPin(
             label = flight.tail,
@@ -1649,7 +979,7 @@ private fun flightMapPin(
             lon = livePosition.lon,
             glyph = "✈",
             isLive = true,
-            caption = "airborne now — live position (${livePosition.source})$speedLabel"
+            caption = "Live position, ${speedLabel}via ${livePosition.source}"
         )
     }
 
@@ -1663,13 +993,7 @@ private fun flightMapPin(
     val lat = info?.lat
     val lon = info?.lon
     if (icao != null && lat != null && lon != null) {
-        val caption = if (isLive) {
-            "on the ground now"
-        } else when (flight.state) {
-            FlightState.AIRBORNE -> "airborne now — no live signal yet, last known ground position"
-            else -> "no current signal — last known position"
-        }
-        return MapPin(label = info.label, lat = lat, lon = lon, glyph = "✈", isLive = isLive, caption = caption)
+        return MapPin(label = PlaceNames.of(info), lat = lat, lon = lon, glyph = "✈", isLive = isLive)
     }
 
     // Fallback added 2026-09-23 — a real ON_GROUND fix that didn't resolve
@@ -1686,7 +1010,6 @@ private fun flightMapPin(
             lon = fallbackLon,
             glyph = "✈",
             isLive = false,
-            caption = "on the ground now — no known airport nearby, approximate area only",
             isApproximate = true
         )
     }
@@ -1706,13 +1029,7 @@ private fun vesselMapPin(vessel: VesselStatus?, ports: Map<String, PortInfo>): M
     val lat = info?.lat
     val lon = info?.lon
     if (code != null && lat != null && lon != null) {
-        val caption = if (isLive) {
-            "in port now"
-        } else when (vessel.state) {
-            VesselState.UNDERWAY -> "underway now — last known port, not live"
-            else -> "no current signal — last known position"
-        }
-        return MapPin(label = info.label, lat = lat, lon = lon, glyph = "⚓", isLive = isLive, caption = caption)
+        return MapPin(label = PlaceNames.of(info), lat = lat, lon = lon, glyph = "⚓", isLive = isLive)
     }
 
     // Fallback added 2026-09-23 — a real AIS fix (moored or underway) that
@@ -1723,17 +1040,12 @@ private fun vesselMapPin(vessel: VesselStatus?, ports: Map<String, PortInfo>): M
     val fallbackLon = vessel.currentLon
     val fallbackLocation = vessel.generalLocation
     if (fallbackLat != null && fallbackLon != null && fallbackLocation != null) {
-        val caption = when (vessel.state) {
-            VesselState.UNDERWAY -> "underway now — no known port nearby, approximate area only"
-            else -> "in port now — no known port nearby, approximate area only"
-        }
         return MapPin(
             label = fallbackLocation,
             lat = fallbackLat,
             lon = fallbackLon,
             glyph = "⚓",
             isLive = false,
-            caption = caption,
             isApproximate = true
         )
     }
@@ -1747,7 +1059,7 @@ private fun bucketLabel(bucket: String, airports: Map<String, AirportInfo>): Str
     "SIGNAL_LOST" -> "Signal lost — possibly landed"
     "UNKNOWN_AIRPORT" -> "Unmatched airport"
     "OTHER" -> "Other airports"
-    else -> airports[bucket]?.label ?: bucket
+    else -> airports[bucket]?.let(PlaceNames::of) ?: bucket
 }
 
 /**
@@ -1773,9 +1085,18 @@ private fun liveFlightColor(bucket: String): Color = when (bucket) {
 }
 
 /**
+ * How a non-place block is drawn on the strip: hatched while moving (in
+ * flight / underway), an empty outline when there's no signal.
+ */
+private fun transitStyle(bucket: String): SegmentStyle = when (bucket) {
+    "IN_FLIGHT", "UNDERWAY" -> SegmentStyle.HATCHED
+    else -> SegmentStyle.OUTLINE
+}
+
+/**
  * Reconstructs the trailing window as literal chronological blocks from
  * [FlightStatus.recentStops] — the same real arrival/departure epochs
- * [LocationHistoryCard] already lists, just laid out on a timeline instead
+ * the stops list under the strip shows, just laid out on a timeline instead
  * of read top to bottom. Deliberately not built from
  * [FlightStatus.locationBreakdown]: that field is a server-side aggregate
  * (bucket -> total seconds, no per-entry ordering promised), and deriving
@@ -1837,7 +1158,7 @@ private fun buildTimelineSegments(
         // same as the trailing-gap case below.
         val bucket = liveFlightBucket(flightState, currentBucket)
         val color = liveFlightColor(bucket)
-        return listOf(TimelineSegment(bucketLabel(bucket, airports), windowStart, nowEpoch, color))
+        return listOf(TimelineSegment(bucketLabel(bucket, airports), windowStart, nowEpoch, color, transitStyle(bucket)))
     }
 
     val topIcaos = ordered.map { it.icao }.distinct().sorted().take(5)
@@ -1855,7 +1176,7 @@ private fun buildTimelineSegments(
             val unknown = segments.isEmpty() && !hasConfirmedAnchorBefore
             val gapKey = if (unknown) "NO_SIGNAL" else "IN_FLIGHT"
             val gapColor = if (unknown) TT.inkMuted else TT.warning
-            segments += TimelineSegment(bucketLabel(gapKey, airports), cursor, start, gapColor)
+            segments += TimelineSegment(bucketLabel(gapKey, airports), cursor, start, gapColor, transitStyle(gapKey))
         }
         if (end > start) {
             segments += TimelineSegment(labelFor(stop.icao), start, end, colorFor(stop.icao))
@@ -1866,115 +1187,217 @@ private fun buildTimelineSegments(
     if (cursor < nowEpoch) {
         val trailingKey = liveFlightBucket(flightState, currentBucket)
         val trailingColor = liveFlightColor(trailingKey)
-        segments += TimelineSegment(bucketLabel(trailingKey, airports), cursor, nowEpoch, trailingColor)
+        segments += TimelineSegment(bucketLabel(trailingKey, airports), cursor, nowEpoch, trailingColor, transitStyle(trailingKey))
     }
 
     return segments
 }
 
 /**
- * One "TIME BY LOCATION" card holding whichever timelines this person has —
- * a small "Plane" strip, a small "Boat" strip, or both stacked together —
- * instead of two separate cards with duplicate headers/borders. A plane and
- * a boat move independently of each other, so both stay visible at once
- * rather than forcing a tap to switch between them. Either half is left out
- * entirely (not just gated on trackedSeconds > 0 inside) so the header
- * doesn't render at all for a person with neither.
+ * Everywhere this plane or boat has been, inside its own card: the week as
+ * a chronological strip, then one row per place with its time this week,
+ * all-time total and when it was last there, plus a line of this week's
+ * visits (when it arrived, how long it stayed) only when the columns can't
+ * already say it. Time that isn't at a place (in flight, underway, no
+ * signal) gets its own rows at the bottom.
  */
 @Composable
-private fun TimeByLocationCard(
-    flight: FlightStatus?,
-    vessel: VesselStatus?,
-    nowSeconds: Long,
-    airports: Map<String, AirportInfo>,
-    ports: Map<String, PortInfo>
+private fun MovementPlaces(
+    trackedSeconds: Long,
+    segments: List<TimelineSegment>,
+    stops: List<StopLine>,
+    lifetime: List<LifetimeLocationShare>,
+    labelFor: (String) -> String,
+    foldLabel: String,
+    /** The place the "Now" row already names with its arrival time, if any. */
+    nowShowsCode: String?,
+    nowSeconds: Long
 ) {
-    Column(
-        Modifier
-            .fillMaxWidth()
-            .background(TT.surface, TT.panelShape(14.dp))
-            .border(1.dp, TT.border, TT.panelShape(14.dp))
-            .padding(14.dp)
-    ) {
-        SectionLabel(text = "TIME BY LOCATION")
-
-        if (flight != null) {
-            Spacer(Modifier.height(10.dp))
-            TimeByLocationStrip(
-                label = "Plane",
-                trackedCaption = "${Format.duration(flight.trackedSeconds)} tracked",
-                segments = buildTimelineSegments(
-                    recentStops = flight.recentStops,
-                    flightState = flight.state,
-                    currentBucket = flight.currentBucket,
-                    trackedSeconds = flight.trackedSeconds,
-                    nowEpoch = nowSeconds,
-                    airports = airports
-                ),
-                windowStartEpoch = nowSeconds - flight.trackedSeconds,
-                windowEndEpoch = nowSeconds
+    val rows = placeRows(segments, stops, lifetime, labelFor, foldLabel, nowSeconds)
+    if (segments.isEmpty() && rows.isEmpty()) return
+    Column(Modifier.padding(top = 10.dp)) {
+        if (segments.isNotEmpty()) {
+            Text(text = "${Format.duration(trackedSeconds)} tracked", color = TT.inkMuted, fontSize = 11.sp)
+            Spacer(Modifier.height(4.dp))
+            // The table below names every block, so the strip's own legend is off.
+            TimelineStrip(
+                segments = segments,
+                windowStartEpoch = nowSeconds - trackedSeconds,
+                windowEndEpoch = nowSeconds,
+                showLegend = false
             )
         }
 
-        if (vessel != null) {
-            Spacer(Modifier.height(if (flight != null) 16.dp else 10.dp))
-            TimeByLocationStrip(
-                label = "Boat",
-                trackedCaption = "${Format.duration(vessel.trackedSeconds)} tracked",
-                segments = buildVesselTimelineSegments(
-                    recentStops = vessel.recentStops,
-                    vesselState = vessel.state,
-                    currentBucket = vessel.currentBucket,
-                    trackedSeconds = vessel.trackedSeconds,
-                    nowEpoch = nowSeconds,
-                    ports = ports
-                ),
-                windowStartEpoch = nowSeconds - vessel.trackedSeconds,
-                windowEndEpoch = nowSeconds
-            )
+        if (rows.isNotEmpty()) {
+            Spacer(Modifier.height(8.dp))
+            Row(Modifier.fillMaxWidth()) {
+                Spacer(Modifier.width(16.dp))
+                PlaceCells(
+                    label = "",
+                    week = "WEEK",
+                    allTime = "ALL TIME",
+                    last = "LAST",
+                    color = TT.inkMuted,
+                    fontSize = 10.sp
+                )
+            }
+            rows.forEach { row ->
+                Row(
+                    Modifier
+                        .fillMaxWidth()
+                        .padding(top = 3.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Box(Modifier.width(16.dp)) {
+                        row.swatch?.let { (color, style) -> SegmentSwatch(color = color, style = style) }
+                    }
+                    PlaceCells(
+                        label = row.label,
+                        week = row.weekSeconds?.takeIf { it > 0 }?.let { Format.duration(it) } ?: "–",
+                        allTime = row.allTimeSeconds?.let { Format.duration(it) } ?: "–",
+                        last = when {
+                            row.stillThere -> "now"
+                            row.lastEpoch != null -> Format.coarseElapsed(row.lastEpoch, nowSeconds)
+                            else -> "–"
+                        },
+                        color = if (row.isPlace) TT.inkPrimary else TT.inkSecondary,
+                        fontSize = 11.sp
+                    )
+                }
+                // This week's visits: when it arrived, and how long it
+                // stayed (or "since" while it's still there) — left out when
+                // the row's own columns already say it.
+                // The stay "Now" already describes isn't repeated here.
+                val visits = row.visits.filterNot { it.departedAtEpoch == null && it.code == nowShowsCode }
+                if (visits.isNotEmpty() && !row.visitsShownByColumns) {
+                    Text(
+                        text = visits.joinToString(" · ") { visit ->
+                            val arrived = Format.coarseElapsed(visit.arrivedAtEpoch, nowSeconds)
+                            visit.departedAtEpoch
+                                ?.let { "$arrived ago, ${Format.duration(it - visit.arrivedAtEpoch)}" }
+                                ?: "since $arrived ago"
+                        },
+                        color = TT.inkMuted,
+                        fontSize = 10.sp,
+                        modifier = Modifier.padding(start = 16.dp)
+                    )
+                }
+            }
         }
     }
 }
 
-/**
- * One labeled timeline strip ("Plane" or "Boat") inside the shared
- * [TimeByLocationCard] — just the label row plus [TimelineStrip], factored
- * out so the plane and boat halves render identically instead of drifting
- * apart the way two full copy-pasted cards eventually would.
- */
+/** The place name and three right-aligned columns of a [MovementPlaces] row. */
 @Composable
-private fun TimeByLocationStrip(
+private fun RowScope.PlaceCells(
     label: String,
-    trackedCaption: String,
-    segments: List<TimelineSegment>,
-    windowStartEpoch: Long,
-    windowEndEpoch: Long
+    week: String,
+    allTime: String,
+    last: String,
+    color: Color,
+    fontSize: TextUnit
 ) {
-    Column {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Text(
-                text = label,
-                color = TT.inkSecondary,
-                fontSize = 12.sp,
-                fontWeight = FontWeight.SemiBold
-            )
-            Spacer(Modifier.width(8.dp))
-            Text(
-                text = trackedCaption,
-                color = TT.inkMuted,
-                fontSize = 11.sp
-            )
-        }
-
-        Spacer(Modifier.height(8.dp))
-
-        TimelineStrip(
-            segments = segments,
-            windowStartEpoch = windowStartEpoch,
-            windowEndEpoch = windowEndEpoch
+    // Full place names wrap rather than being cut short.
+    Text(
+        text = label,
+        color = color,
+        fontSize = fontSize,
+        modifier = Modifier.weight(1f)
+    )
+    listOf(week to 54.dp, allTime to 60.dp, last to 36.dp).forEach { (text, width) ->
+        Text(
+            text = text,
+            color = if (text == "–") TT.inkMuted else color,
+            fontSize = fontSize,
+            maxLines = 1,
+            textAlign = TextAlign.End,
+            modifier = Modifier.width(width)
         )
     }
 }
+
+/** One row of a [MovementPlaces] table. */
+private data class PlaceRow(
+    val label: String,
+    val swatch: Pair<Color, SegmentStyle>?,
+    val weekSeconds: Long?,
+    val allTimeSeconds: Long?,
+    val lastEpoch: Long?,
+    val stillThere: Boolean,
+    val visits: List<StopLine>,
+    val isPlace: Boolean,
+    /**
+     * True when there's a single visit the columns already describe: it
+     * left at LAST after staying WEEK (so it arrived LAST + WEEK ago), or
+     * it's still there and WEEK is the whole stay.
+     */
+    val visitsShownByColumns: Boolean = false
+)
+
+/**
+ * Merges the week (stops and strip) with the all-time tally into one row
+ * per place, most recently there first, then the non-place blocks (in
+ * flight, no signal...) from the strip.
+ */
+private fun placeRows(
+    segments: List<TimelineSegment>,
+    stops: List<StopLine>,
+    lifetime: List<LifetimeLocationShare>,
+    labelFor: (String) -> String,
+    foldLabel: String,
+    nowSeconds: Long
+): List<PlaceRow> {
+    val weekStart = nowSeconds - 7 * 86_400L
+    val swatchByLabel = segments.associate { it.label to (it.color to it.style) }
+    val lifetimeByCode = lifetime.associateBy { it.location }
+
+    val places = (stops.map { it.code } + lifetime.map { it.location }).distinct().map { code ->
+        val visits = stops.filter { it.code == code }.sortedByDescending { it.arrivedAtEpoch }
+        val week = visits.sumOf { visit ->
+            val start = maxOf(visit.arrivedAtEpoch, weekStart)
+            val end = minOf(visit.departedAtEpoch ?: nowSeconds, nowSeconds)
+            (end - start).coerceAtLeast(0)
+        }
+        val label = labelFor(code)
+        val lastEpoch = lifetimeByCode[code]?.lastSeenEpoch ?: visits.mapNotNull { it.departedAtEpoch }.maxOrNull()
+        val only = visits.singleOrNull()
+        PlaceRow(
+            label = label,
+            // Past the strip's 5 named shades, a place shares the fold shade.
+            swatch = if (week > 0) swatchByLabel[label] ?: swatchByLabel[foldLabel] else null,
+            weekSeconds = week,
+            allTimeSeconds = lifetimeByCode[code]?.totalSeconds,
+            lastEpoch = lastEpoch,
+            stillThere = visits.any { it.departedAtEpoch == null },
+            visits = visits,
+            isPlace = true,
+            visitsShownByColumns = only != null && only.arrivedAtEpoch >= weekStart &&
+                (only.departedAtEpoch == null || only.departedAtEpoch == lastEpoch)
+        )
+    }.sortedWith(compareByDescending<PlaceRow> { it.stillThere }.thenByDescending { it.lastEpoch ?: 0L })
+
+    val elsewhere = segments
+        .filter { it.style != SegmentStyle.SOLID }
+        .groupBy { it.label }
+        .map { (label, group) ->
+            PlaceRow(
+                label = label,
+                swatch = group.first().color to group.first().style,
+                weekSeconds = group.sumOf { it.endEpoch - it.startEpoch },
+                allTimeSeconds = null,
+                lastEpoch = null,
+                stillThere = false,
+                visits = emptyList(),
+                isPlace = false
+            )
+        }
+        .sortedByDescending { it.weekSeconds }
+
+    return places + elsewhere
+}
+
+/** One stop on a plane or boat's week: the airport ICAO or port UN/LOCODE, and when. */
+private data class StopLine(val code: String, val arrivedAtEpoch: Long, val departedAtEpoch: Long?)
 
 /** The maritime mirror of [bucketLabel] — see [VesselStatus.locationBreakdown]'s sentinel names. */
 private fun vesselBucketLabel(bucket: String, ports: Map<String, PortInfo>): String = when (bucket) {
@@ -1983,7 +1406,7 @@ private fun vesselBucketLabel(bucket: String, ports: Map<String, PortInfo>): Str
     "SIGNAL_LOST" -> "Signal lost — possibly arrived"
     "UNKNOWN_PORT" -> "Unmatched port"
     "OTHER" -> "Other ports"
-    else -> ports[bucket]?.label ?: bucket
+    else -> ports[bucket]?.let(PlaceNames::of) ?: bucket
 }
 
 /**
@@ -2049,7 +1472,7 @@ private fun buildVesselTimelineSegments(
         // too, same as the trailing-gap case below.
         val bucket = liveVesselBucket(vesselState, currentBucket)
         val color = liveVesselColor(bucket)
-        return listOf(TimelineSegment(vesselBucketLabel(bucket, ports), windowStart, nowEpoch, color))
+        return listOf(TimelineSegment(vesselBucketLabel(bucket, ports), windowStart, nowEpoch, color, transitStyle(bucket)))
     }
 
     val topCodes = ordered.map { it.unlocode }.distinct().sorted().take(5)
@@ -2067,7 +1490,7 @@ private fun buildVesselTimelineSegments(
             val unknown = segments.isEmpty() && !hasConfirmedAnchorBefore
             val gapKey = if (unknown) "NO_SIGNAL" else "UNDERWAY"
             val gapColor = if (unknown) TT.inkMuted else TT.warning
-            segments += TimelineSegment(vesselBucketLabel(gapKey, ports), cursor, start, gapColor)
+            segments += TimelineSegment(vesselBucketLabel(gapKey, ports), cursor, start, gapColor, transitStyle(gapKey))
         }
         if (end > start) {
             segments += TimelineSegment(labelFor(stop.unlocode), start, end, colorFor(stop.unlocode))
@@ -2078,92 +1501,20 @@ private fun buildVesselTimelineSegments(
     if (cursor < nowEpoch) {
         val trailingKey = liveVesselBucket(vesselState, currentBucket)
         val trailingColor = liveVesselColor(trailingKey)
-        segments += TimelineSegment(vesselBucketLabel(trailingKey, ports), cursor, nowEpoch, trailingColor)
+        segments += TimelineSegment(vesselBucketLabel(trailingKey, ports), cursor, nowEpoch, trailingColor, transitStyle(trailingKey))
     }
 
     return segments
 }
 
 /**
- * Entry point into [FamilyHistoryScreen] — only ever placed in the list when
- * [FamilyHistoryRepository] actually has a sourced entry for this person
- * (see the `hasFamilyHistory` check above), so this card itself never has
- * to render an empty or "coming soon" state.
- */
-@Composable
-private fun FamilyHistoryEntryCard(onClick: () -> Unit) {
-    Row(
-        Modifier
-            .fillMaxWidth()
-            // Whole card is the tap target, so hudTouchable goes first — see
-            // PersonRow's identical reasoning in TrackerScreen.kt.
-            .hudTouchable(
-                cornerLength = 9.dp,
-                cornerInset = 3.dp,
-                elevation = 2.dp,
-                shape = TT.panelShape(14.dp),
-                onClick = onClick
-            )
-            .background(TT.surface, TT.panelShape(14.dp))
-            .border(1.dp, TT.border, TT.panelShape(14.dp))
-            .hudCorners()
-            .padding(14.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Column(Modifier.weight(1f)) {
-            SectionLabel(text = "FAMILY HISTORY")
-            Spacer(Modifier.height(6.dp))
-            Text(
-                text = "Where they came from, as far back as the record goes.",
-                color = TT.inkSecondary,
-                fontSize = 12.sp,
-                lineHeight = 17.sp
-            )
-        }
-        Spacer(Modifier.width(12.dp))
-        Text(text = "→", color = TT.accentCyan, fontSize = 18.sp, fontWeight = FontWeight.Bold)
-    }
-}
-
-/**
- * Renders [Person.bio] — see that field's doc comment for why it's one
- * pre-written paragraph rather than separate birthplace/education fields.
- * The link-out social glyph that used to sit at the end of this card now
- * lives on [PersonHeader] instead, overlaid on the photo next to the back
- * button — same identity information, no longer several cards away from
- * the rest of it.
- */
-@Composable
-private fun BiographyCard(bio: String) {
-    Column(
-        Modifier
-            .fillMaxWidth()
-            .background(TT.surface, TT.panelShape(14.dp))
-            .border(1.dp, TT.border, TT.panelShape(14.dp))
-            .padding(14.dp)
-    ) {
-        SectionLabel(text = "BIOGRAPHY")
-        Spacer(Modifier.height(8.dp))
-        Text(
-            text = bio,
-            color = TT.inkSecondary,
-            fontSize = 13.sp,
-            lineHeight = 19.sp
-        )
-    }
-}
-
-/**
  * Link out, never embed — pulling live posts means a metered per-read API
  * bill (X's read API has no free tier as of 2026) that scales with users,
- * the one thing the whole snapshot architecture exists to avoid. Identifies
- * which mark to show from [url]'s host only — it never guesses from the
- * person, just reads the link they gave us. Rendered on [PersonHeader] as
- * just this platform mark inside its own dark chip — no "View on X" text,
- * since the mark alone already reads as a link-out the way it would on any
- * other profile.
+ * the one thing the whole snapshot architecture exists to avoid. Names the
+ * platform from [url]'s host only — it never guesses from the person, just
+ * reads the link they gave us.
  */
-private fun socialPlatformGlyph(url: String): String {
+private fun socialPlatformName(url: String): String {
     val host = try {
         java.net.URI(url).host.orEmpty().lowercase()
     } catch (_: Exception) {
@@ -2171,150 +1522,134 @@ private fun socialPlatformGlyph(url: String): String {
     }
     return when {
         host.contains("x.com") || host.contains("twitter.com") -> "X"
-        host.contains("bsky.app") -> "🦋"
-        host.contains("instagram.com") -> "📷"
-        host.contains("facebook.com") -> "f"
-        host.contains("threads.net") || host.contains("threads.com") -> "@"
-        host.contains("linkedin.com") -> "in"
-        else -> "↗"
+        host.contains("bsky.app") -> "Bluesky"
+        host.contains("instagram.com") -> "Instagram"
+        host.contains("facebook.com") -> "Facebook"
+        host.contains("threads.net") || host.contains("threads.com") -> "Threads"
+        host.contains("linkedin.com") -> "LinkedIn"
+        host.contains("truthsocial.com") -> "Truth Social"
+        else -> "Profile"
     }
 }
 
 @Composable
-private fun DetailRow(label: String, value: String) {
-    Row(Modifier.fillMaxWidth()) {
-        Text(text = label, color = TT.inkMuted, fontSize = 13.sp, modifier = Modifier.width(92.dp))
-        Text(text = value, color = TT.inkSecondary, fontSize = 13.sp)
-    }
-}
-
-@Composable
-private fun NewsRow(item: NewsItem, nowSeconds: Long) {
-    val uriHandler = LocalUriHandler.current
-
-    Column(
+private fun DetailRow(label: String, value: String?) {
+    if (value == null) return
+    Row(
         Modifier
             .fillMaxWidth()
-            .hudTouchable(
-                cornerLength = 8.dp,
-                cornerInset = 3.dp,
-                elevation = 2.dp,
-                shape = TT.panelShape(12.dp)
-            ) { uriHandler.openUri(item.url) }
-            .background(TT.surface, TT.panelShape(12.dp))
-            .border(1.dp, TT.border, TT.panelShape(12.dp))
-            .padding(14.dp)
+            .padding(vertical = 2.dp)
     ) {
-        // Capped rather than left to wrap freely (2026-09-25): a defensive
-        // backstop, not a fix for anything actually reproduced — a real
-        // embedded line break was one of the first theories chased for the
-        // blank-card bug below and was ruled out (every title, live-polled
-        // or backend-cached, came back clean down to the byte). Still worth
-        // keeping: a card that can never grow past a few lines regardless of
-        // what's actually inside [item.title] costs nothing and forecloses
-        // that entire failure mode for whatever the next syndication feed's
-        // formatting surprise turns out to be.
-        Text(
-            text = item.title,
-            color = TT.inkPrimary,
-            fontSize = 14.sp,
-            maxLines = 4,
-            overflow = TextOverflow.Ellipsis
-        )
+        Text(text = label, color = TT.inkMuted, fontSize = 12.sp, modifier = Modifier.width(56.dp))
+        Spacer(Modifier.width(8.dp))
+        Text(text = value, color = TT.inkSecondary, fontSize = 12.sp)
+    }
+}
+
+/**
+ * Headlines in one card, then the all-time theme tally: how many distinct
+ * headlines have ever been classified into each theme for this person (see
+ * [Person.lifetimeNewsThemes] and snapshot_worker.py's
+ * `accumulate_lifetime_news_themes()`). Bars are relative to this person's
+ * own biggest theme, not a scale shared across people.
+ */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun NewsCard(news: List<NewsItem>, themes: List<NewsThemeShare>, nowSeconds: Long) {
+    val uriHandler = LocalUriHandler.current
+    Column(Modifier.padding(vertical = 10.dp)) {
+        SectionLabel(text = "IN THE NEWS", modifier = Modifier.padding(horizontal = 12.dp))
         Spacer(Modifier.height(4.dp))
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            // The actual bug (2026-09-25, found by measuring the live layout
-            // directly rather than guessing from title content): this Text
-            // had no weight, so as the Row's first (unweighted) child it
-            // always claimed the Row's FULL available width for its own
-            // layout bounds, regardless of whether it visually needed that
-            // much. Fine for an ordinary short source name — there's still
-            // plenty of width left for [NoteChip] either way — but
-            // "FashionNetwork - The World's Fashion Business News" (50
-            // characters; every other source in this list is under 25) ran
-            // this text's reserved width out to the Row's own width, leaving
-            // the chip after it with effectively zero space. "Business &
-            // Deals" then wrapped into dozens of near-zero-width lines
-            // trying to fit there, measuring well over 1000px tall and
-            // dragging the whole card down with it — a card-height bug that
-            // was actually a width-starvation bug on its sibling.
-            // `weight(1f, fill = false)` makes this the flexible side of the
-            // row instead of the greedy one: Compose measures the
-            // unweighted [NoteChip] first, at its own natural size, and only
-            // gives this text whatever's left — so the chip can never be
-            // squeezed again regardless of how long a future outlet's name
-            // turns out to be. `maxLines = 1` keeps this line from wrapping
-            // even when it does end up with less room than it wants,
-            // trailing with `…` instead.
+        if (news.isEmpty()) NothingOnRecord("No headlines right now")
+
+        news.forEachIndexed { index, item ->
+            if (index > 0) SheetLine(subtle = true)
+            Column(
+                Modifier
+                    .fillMaxWidth()
+                    .clickable { uriHandler.openUri(item.url) }
+                    .padding(horizontal = 12.dp, vertical = 6.dp)
+            ) {
+                // Capped so a card can never grow past a few lines whatever
+                // the feed puts in the title.
+                Text(
+                    text = item.title,
+                    color = TT.inkPrimary,
+                    fontSize = 13.sp,
+                    lineHeight = 17.sp,
+                    maxLines = 3,
+                    overflow = TextOverflow.Ellipsis
+                )
+                // The theme drops to its own line when it doesn't fit beside
+                // the source, so neither is ever squeezed. (A long outlet name
+                // once starved a side-by-side theme chip into a tower of
+                // one-letter lines, 2026-09-25.)
+                FlowRow(
+                    modifier = Modifier.padding(top = 2.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Text(
+                        text = "${item.source} · ${Format.coarseElapsed(item.publishedEpoch, nowSeconds)} ago",
+                        color = TT.inkMuted,
+                        fontSize = 11.sp,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    // No tag when classification didn't run, nothing fit, or
+                    // the headline came from the live poll — see NewsItem.theme.
+                    item.theme?.let { theme ->
+                        ThemeLabel(theme = theme, color = TT.inkSecondary, fontSize = 11.sp)
+                    }
+                }
+            }
+        }
+
+        if (themes.isNotEmpty()) {
+            val maxCount = themes.maxOf { it.count }.coerceAtLeast(1)
             Text(
-                text = "${item.source} · ${Format.agoShort(item.publishedEpoch, nowSeconds)}",
+                text = "ALL-TIME THEMES",
                 color = TT.inkMuted,
                 fontSize = 11.sp,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.weight(1f, fill = false)
+                fontWeight = FontWeight.Bold,
+                letterSpacing = 1.sp,
+                modifier = Modifier.padding(start = 12.dp, end = 12.dp, top = 10.dp, bottom = 4.dp)
             )
-            // Null whenever classify_news_themes() didn't run this pass (no
-            // GEMINI_API_KEY/GEMINI_NEWS_MODEL configured, or the call
-            // failed) or this headline arrived via the client-side live poll
-            // rather than the backend snapshot — see NewsItem.theme's doc
-            // comment. Either way, no tag rather than a placeholder/blank
-            // chip: an absent theme isn't an error state for this card.
-            item.theme?.let { theme ->
-                Spacer(Modifier.width(8.dp))
-                NoteChip(text = theme, color = newsThemeColor(theme))
+            themes.forEach { share ->
+                Row(
+                    Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 12.dp, vertical = 3.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    ThemeLabel(
+                        theme = share.theme,
+                        color = TT.inkPrimary,
+                        fontSize = 12.sp,
+                        modifier = Modifier.weight(1f)
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    Box(
+                        Modifier
+                            .width(72.dp)
+                            .height(6.dp)
+                            .border(1.dp, TT.border, TT.panelShape)
+                    ) {
+                        Box(
+                            Modifier
+                                .fillMaxWidth(fraction = share.count.toFloat() / maxCount.toFloat())
+                                .height(6.dp)
+                                .background(TT.series)
+                        )
+                    }
+                    Text(
+                        text = share.count.toString(),
+                        color = TT.inkMuted,
+                        fontSize = 11.sp,
+                        textAlign = TextAlign.End,
+                        modifier = Modifier.width(32.dp)
+                    )
+                }
             }
         }
     }
-}
-
-/**
- * A dedicated 7th color for the "Profile & Commentary" news theme — added
- * alongside [TT.categorical] rather than as a 7th slot inside it, because
- * that palette is its own separately-validated, separately-scoped thing
- * (currently consumed only by TimelineStrip, with its own 6th "Other" fold
- * slot already spoken for). Adding a theme here doesn't mean TimelineStrip
- * grows a slot too, so this stays a standalone constant with its own
- * validation record rather than an extension of that shared list.
- *
- * Not eyeballed — computed the same way the dataviz skill requires any
- * categorical color to be: derived in OKLCH space and verified with the
- * skill's own `validate_palette.js` to clear CVD separation (target ΔE >= 8)
- * and the normal-vision floor (>= 15, a hard gate) against every other
- * color already in play for this app — [TT.categorical]'s 5 theme colors,
- * the "Other" orange, and the 3 reserved status colors — not just against
- * its immediate neighbors. Full 7-color news-theme palette (the 5 existing
- * + this + "Other" orange) re-validated together as of this addition:
- * worst adjacent CVD ΔE 14.4, worst adjacent normal-vision ΔE 16.7 — both
- * comfortably clear their floors. Below 3:1 contrast against the app's dark
- * surface like [TT.categorical]'s own slot 3 already is, which is why
- * every consumer of a theme color already renders it next to the theme's
- * text label (see [NewsRow] and [LifetimeNewsThemeRow]) rather than as a
- * bare color swatch — that visible label is the required secondary
- * encoding, not an optional nicety.
- */
-private val newsProfileCommentary = Color(0xFFB21557)
-
-/**
- * Maps a [NewsItem.theme] string to a color — the first 5 real themes reuse
- * [TT.categorical]'s existing slots one-for-one, in the same order
- * `NEWS_THEMES` is declared in snapshot_worker.py, so a given theme always
- * renders with the same color every time rather than a color picked by
- * hashing or first-seen order; "Profile & Commentary" gets its own
- * dedicated [newsProfileCommentary] rather than a 7th [TT.categorical] slot
- * (see that color's own doc comment for why). Anything this client doesn't
- * recognize (an older client talking to a newer backend that's added a
- * theme since, or literally "Other") falls back to [TT.categorical]'s slot
- * 5 — its own doc comment already documents that slot as the reserved
- * "didn't fit a named bucket" color, which is exactly the right visual
- * treatment for both cases.
- */
-private fun newsThemeColor(theme: String): Color = when (theme) {
-    "Markets & Wealth" -> TT.categorical[0]
-    "Business & Deals" -> TT.categorical[1]
-    "Legal & Regulatory" -> TT.categorical[2]
-    "Technology & Innovation" -> TT.categorical[3]
-    "Public Life & Controversy" -> TT.categorical[4]
-    "Profile & Commentary" -> newsProfileCommentary
-    else -> TT.categorical[5]
 }

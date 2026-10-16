@@ -13,7 +13,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
@@ -48,22 +48,21 @@ fun ThresholdGauge(
                 .fillMaxWidth()
                 .height(10.dp)
         ) {
-            val r = CornerRadius(4.dp.toPx(), 4.dp.toPx())
-
-            drawRoundRect(
-                color = TT.grid,
-                topLeft = Offset.Zero,
-                size = Size(size.width, size.height),
-                cornerRadius = r
+            // An empty box with a thin white edge, filled from the left.
+            val edge = 1.dp.toPx()
+            drawRect(
+                color = TT.border,
+                topLeft = Offset(edge / 2, edge / 2),
+                size = Size(size.width - edge, size.height - edge),
+                style = Stroke(width = edge)
             )
 
             val w = size.width * animated
             if (w > 0f) {
-                drawRoundRect(
+                drawRect(
                     color = barColor,
                     topLeft = Offset.Zero,
-                    size = Size(w.coerceAtLeast(8.dp.toPx()), size.height),
-                    cornerRadius = r
+                    size = Size(w.coerceAtLeast(2.dp.toPx()), size.height)
                 )
             }
 

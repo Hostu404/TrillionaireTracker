@@ -6,11 +6,11 @@ package com.hostu404.trilliontracker.data
  * exactly — that file carries the actual SEC-filing/proxy sourcing notes per
  * person, re-check there before trusting a figure below as current.
  *
- * [currency] defaults to "USD" since every holding here was until now
- * US-listed. `ITX.MC` (Ortega/Inditex, Madrid) is the first exception —
- * Yahoo quotes it in EUR, so [Holdings.liveNetWorth] has to convert it to
- * USD via a live FX quote before it can be summed with anyone else's total,
- * exactly mirroring `backend/snapshot_worker.py`'s `price_quotes_in_usd`.
+ * [currency] defaults to "USD" since every holding here is US-listed. A
+ * non-USD one (a Madrid-listed ticker, say) would be quoted in its own
+ * currency, so [Holdings.liveNetWorth] converts it to USD via a live FX
+ * quote before it can be summed with anyone else's total, exactly
+ * mirroring `backend/snapshot_worker.py`'s `price_quotes_in_usd`.
  */
 data class Holding(val ticker: String, val shares: Double, val currency: String = "USD")
 
@@ -54,11 +54,6 @@ data class LiveWealthAnchor(
  * EDGAR/the filings it cites) before trusting these as current — share
  * counts drift with every 10b5-1 sale and every filing amendment, same
  * caveat that file's own sourcing notes carry.
- *
- * `dell` and `ortega` now have confidently-sourced share counts in
- * `backend/holdings.json` (Dell: DELL, 280,000,000 shares; Ortega: ITX.MC,
- * 1,869,669,303 shares) and are ported below like everyone else. Ortega's
- * `ITX.MC` trades in EUR — see [Holding.currency] and [liveNetWorth].
  */
 object Holdings {
     private val byId: Map<String, HoldingsInfo> = mapOf(
@@ -76,16 +71,14 @@ object Holdings {
                 Holding("SPCX", 6_400_000_000.0)
             )
         ),
-        "huang" to HoldingsInfo(holdings = listOf(Holding("NVDA", 851_983_603.0))),
         "bezos" to HoldingsInfo(holdings = listOf(Holding("AMZN", 950_400_000.0))),
         "zuckerberg" to HoldingsInfo(holdings = listOf(Holding("META", 334_000_000.0))),
-        "ellison" to HoldingsInfo(holdings = listOf(Holding("ORCL", 1_160_000_000.0))),
-        "page" to HoldingsInfo(holdings = listOf(Holding("GOOGL", 746_000_000.0))),
-        "brin" to HoldingsInfo(holdings = listOf(Holding("GOOGL", 697_000_000.0))),
-        "ballmer" to HoldingsInfo(holdings = listOf(Holding("MSFT", 297_000_000.0))),
-        "dell" to HoldingsInfo(holdings = listOf(Holding("DELL", 280_000_000.0))),
-        "ortega" to HoldingsInfo(
-            holdings = listOf(Holding("ITX.MC", 1_869_669_303.0, currency = "EUR"))
+        // Trump Media shares (Form 4, 2026-06-19). The rest of his wealth is
+        // a hand-set estimate: the published snapshot's figure is used when
+        // there is one (see updateAnchors), this one only as a fallback.
+        "trump" to HoldingsInfo(
+            holdings = listOf(Holding("DJT", 114_750_000.0)),
+            privateStakesUsd = 5_800_000_000.0
         )
     )
 
@@ -108,7 +101,7 @@ object Holdings {
 
     /**
      * Every ticker any tracked person holds, plus one FX pair per non-USD
-     * currency in use (currently just "EURUSD=X", for Ortega's ITX.MC),
+     * currency in use (none right now: everyone listed holds US-listed stock),
      * deduped — one concurrent request per symbol per poll.
      */
     val allTickers: List<String> = byId.values
@@ -127,7 +120,7 @@ object Holdings {
      * guess a rate. A person with no [HoldingsInfo] at all also returns null
      * here.
      */
-    fun liveNetWorth(id: String, prices: Map<String, Double>): Double? {
+    fun liveNetWorth(id: String, prices: Map<String, Double>, privateUsd: Double? = null): Double? {
         val info = byId[id] ?: return null
         var total = 0.0
         for (h in info.holdings) {
@@ -141,7 +134,7 @@ object Holdings {
             }
             total += h.shares * usdPrice
         }
-        return total + info.privateStakesUsd + info.cashUsd - info.liabilitiesUsd
+        return total + (privateUsd ?: info.privateStakesUsd) + info.cashUsd - info.liabilitiesUsd
     }
 
     /**
@@ -165,12 +158,14 @@ object Holdings {
         previous: Map<String, LiveWealthAnchor>,
         prices: Map<String, Double>,
         nowEpochSeconds: Long,
-        seedDriftPerSecondUsd: (String) -> Double
+        seedDriftPerSecondUsd: (String) -> Double,
+        /** The snapshot's hand-set private figure for a person, when it has one. */
+        privateUsdFor: (String) -> Double? = { null }
     ): Map<String, LiveWealthAnchor> {
         if (prices.isEmpty()) return previous
         val updated = previous.toMutableMap()
         for (id in trackedIds) {
-            val liveValue = liveNetWorth(id, prices) ?: continue
+            val liveValue = liveNetWorth(id, prices, privateUsdFor(id)) ?: continue
             val prior = updated[id]
             val elapsed = prior?.let { nowEpochSeconds - it.anchorEpochSeconds } ?: 0L
             val drift = if (prior != null && elapsed > 0) {

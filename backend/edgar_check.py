@@ -22,8 +22,8 @@ What it does, per person in holdings.json who has an "edgarCik":
 
 What it deliberately does NOT do: touch holdings.json itself. Some entries in
 that file are a single Form 4's sharesOwnedFollowingTransaction value directly
-(e.g. huang/NVDA); others are derived (a reported ownership PERCENTAGE times
-shares outstanding, e.g. zuckerberg/page/brin/ballmer) or composite (musk/SPCX
+(e.g. bezos/AMZN); others are derived (a reported ownership PERCENTAGE times
+shares outstanding, e.g. zuckerberg/META) or composite (musk/SPCX
 sums Class A + Class B + RSUs/options across multiple filings, which no single
 Form 4 line reports). A script can't safely tell those apart or re-derive them
 — holdings.json's own _comment is the record of how each figure was actually

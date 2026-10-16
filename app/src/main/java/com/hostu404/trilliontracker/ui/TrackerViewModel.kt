@@ -19,9 +19,6 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
-/** How many people the app actually presents itself as tracking — see [TrackerUiState.topTen]. */
-private const val DISPLAYED_RANK_COUNT = 10
-
 data class TrackerUiState(
     val snapshot: Snapshot? = null,
     val nowMillis: Long = System.currentTimeMillis(),
@@ -32,40 +29,59 @@ data class TrackerUiState(
      * One entry per person [Holdings] currently has a fully-priced live
      * total for — see `TrackerViewModel.startLiveWealthPolling`. Anyone
      * missing here (an unpriced holding this poll, an unconvertible FX rate
-     * for a non-USD holding like Ortega's `ITX.MC`, or nobody-tracked at
-     * all) just falls back to the snapshot/seed projection in [projected],
-     * exactly as if this feature didn't exist for them.
+     * for a non-USD holding, or nobody-tracked at all) just falls back to
+     * the snapshot/seed projection in [projected], exactly as if this
+     * feature didn't exist for them.
      */
     val liveWealthAnchors: Map<String, LiveWealthAnchor> = emptyMap()
 ) {
-    /** Every person the backend/seed currently prices — see [topTen] for who's actually shown. */
+    /** Every person the backend/seed currently prices — see [Config.TRACKED_PEOPLE]. */
     val people: List<Person> get() = snapshot?.people.orEmpty()
 
     /**
      * [people], live-sorted by [projected] net worth rather than however the
-     * snapshot/seed happened to list them. This is the full tracked bench,
-     * not necessarily what's on screen — see [topTen] for that. Recomputed
-     * every tick alongside everything else this state already ticks; an
-     * overtake anywhere in the field shows up here as an ordinary reorder,
-     * which the screen then animates (see `Modifier.animateItem()` on
-     * `PersonRow`) rather than special-casing any particular rank.
+     * snapshot/seed happened to list them. Recomputed every tick alongside
+     * everything else this state already ticks; an overtake shows up here as
+     * an ordinary reorder, which the main page then animates (see
+     * `Modifier.animateItem()` in TrackerScreen).
      */
     val rankedPeople: List<Person> get() = people.sortedByDescending { projected(it) }
 
-    /**
-     * The top [DISPLAYED_RANK_COUNT] of [rankedPeople] — what the tracker
-     * screen's list, ranks, "biggest mover", and the wealth/poverty totals
-     * all actually use. [people] can be a wider bench than this (see
-     * `backend/holdings.json` — tracking more than 10 people, all priced
-     * every pass, lets someone near the boundary overtake the displayed
-     * #10 and surface here automatically the moment they do, rather than
-     * needing a manual add "just in time"). Everything user-facing reads
-     * this instead of [people]/[rankedPeople] directly so the app's own
-     * "top 10" premise stays accurate even as the tracked bench grows.
-     */
-    val topTen: List<Person> get() = rankedPeople.take(DISPLAYED_RANK_COUNT)
+    /** Whoever is richest right now. */
+    val leader: Person? get() = rankedPeople.firstOrNull()
 
-    val leader: Person? get() = topTen.firstOrNull()
+    /**
+     * The three themes most common across everyone's current headlines,
+     * with how many headlines carry each. A story filed under two people
+     * counts once; untagged and "Other" headlines (no theme, see
+     * TrackerRepository) don't count at all.
+     */
+    val trendingThemes: List<Pair<String, Int>>
+        get() = people.flatMap { it.news }
+            .distinctBy { it.title }
+            .mapNotNull { it.theme }
+            .groupingBy { it }
+            .eachCount()
+            .entries
+            .sortedByDescending { it.value }
+            .take(3)
+            .map { it.key to it.value }
+
+    /** Everyone's live net worth added together. */
+    val totalProjectedWealth: Double get() = people.sumOf { projected(it) }
+
+    /**
+     * [totalProjectedWealth] expressed as "days of a poverty-free world" —
+     * how many days this much money would cover at
+     * [Config.DAILY_POVERTY_ELIMINATION_COST_USD], the daily rate implied by
+     * a real, cited annual estimate for ending extreme poverty worldwide.
+     * A what-this-money-could-buy comparison against a published cost
+     * estimate, not a claim that this exact plan would run for exactly this
+     * many days — see [Config.ANNUAL_POVERTY_ELIMINATION_COST_USD] for the
+     * source and caveats. The UI labels it as a comparison.
+     */
+    val daysOfPovertyFreeWorld: Double
+        get() = totalProjectedWealth / Config.DAILY_POVERTY_ELIMINATION_COST_USD
 
     /**
      * A [LiveWealthAnchor] wins over the snapshot/seed figure whenever one
@@ -90,35 +106,6 @@ data class TrackerUiState(
         liveWealthAnchors[person.id]?.driftPerSecondUsd ?: person.driftPerSecondUsd
 
     fun personById(id: String): Person? = people.firstOrNull { it.id == id }
-
-    /**
-     * Live sum of [topTen]'s [projected] net worth — the same per-tick local
-     * projection each person's own card already uses, just added together.
-     * Deliberately [topTen], not [people]: this is presented everywhere in
-     * the UI as "the top 10's combined wealth," so a wider tracked bench
-     * (see [topTen]'s doc comment) shouldn't quietly inflate it with people
-     * who aren't even shown. Recomputes on every [nowMillis] tick, same as
-     * an individual figure would.
-     */
-    val totalProjectedWealth: Double get() = topTen.sumOf { projected(it) }
-
-    /**
-     * [totalProjectedWealth] expressed as a "days of a poverty-free world"
-     * figure — how many days this much money would cover at
-     * [Config.DAILY_POVERTY_ELIMINATION_COST_USD], the daily rate implied by
-     * a real, cited annual estimate for ending extreme poverty worldwide.
-     * A what-this-money-could-buy comparison against a published cost
-     * estimate, not a literal claim that this exact plan would run for
-     * exactly this many days — see [Config.ANNUAL_POVERTY_ELIMINATION_COST_USD]
-     * for the source and caveats. The UI is responsible for labeling it as
-     * a comparison.
-     */
-    val daysOfPovertyFreeWorld: Double
-        get() = totalProjectedWealth / Config.DAILY_POVERTY_ELIMINATION_COST_USD
-
-    /** True only while someone in [topTen] is actually over the line right now. */
-    val hasLiveTrillionaire: Boolean
-        get() = topTen.any { projected(it) >= (snapshot?.thresholdUsd ?: Double.MAX_VALUE) }
 }
 
 class TrackerViewModel(
@@ -221,7 +208,8 @@ class TrackerViewModel(
                             previous = current.liveWealthAnchors,
                             prices = prices,
                             nowEpochSeconds = nowEpochSeconds,
-                            seedDriftPerSecondUsd = { id -> current.personById(id)?.driftPerSecondUsd ?: 0.0 }
+                            seedDriftPerSecondUsd = { id -> current.personById(id)?.driftPerSecondUsd ?: 0.0 },
+                            privateUsdFor = { id -> current.personById(id)?.estimate?.totalUsd }
                         )
                     )
                 }

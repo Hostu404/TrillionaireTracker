@@ -45,8 +45,8 @@ data class SourcedNote(
  * sourced — a generation with a knowable politics angle but no traceable
  * "what was on the radio" fact just leaves [music] null rather than
  * reaching for a generic potted-history line to fill the slot. A
- * generation with no fixable time window at all (see Brin's Grandparents
- * entry) skips [WorldSnapshot] entirely instead of guessing an era.
+ * generation with no fixable time window at all skips [WorldSnapshot]
+ * entirely instead of guessing an era.
  */
 @Serializable
 data class WorldSnapshot(
@@ -104,12 +104,10 @@ private data class FamilyHistoryFile(
  *
  * A person absent from the map simply has no Family History entry point
  * shown — see `PersonDetailScreen`'s use of [entryFor] — rather than the
- * screen ever showing an empty or guessed one. `brin` was the original
- * proof-of-concept entry (chosen first because his family's story happens
- * to be unusually well documented on the record); the roster has since
- * grown to cover all 10 currently-tracked people (see
- * `family_history.json`'s own `_comment`), each stopping wherever its own
- * sourcing genuinely runs out rather than all reaching the same depth.
+ * screen ever showing an empty or guessed one. Everyone tracked has an
+ * entry (see `family_history.json`'s own `_comment`), each
+ * stopping wherever its own sourcing genuinely runs out rather than all
+ * reaching the same depth.
  */
 object FamilyHistoryRepository {
     private const val ASSET_PATH = "family_history.json"

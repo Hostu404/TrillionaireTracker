@@ -168,6 +168,7 @@ VESSEL_SIGNAL_LOST_GRACE_SECONDS = 4 * 86_400    # 4 days
 VESSEL_SIGNAL_LOST_HARD_CEILING_SECONDS = 10 * 86_400  # 10 days
 
 WIKI_REFRESH_SECONDS = 30 * 86_400   # a photo/article link barely ever changes
+WIKI_RETRY_SECONDS = 3_600           # a failed lookup (e.g. a 429) is tried again an hour later
 
 
 # ---------------------------------------------------------------- http
@@ -417,7 +418,7 @@ def backfill_history(subject: Subject, now: int) -> list[dict]:
             total += h.shares * price * rate
         if not ok:
             continue
-        total += subject.private_stakes_usd + subject.cash_usd - subject.liabilities_usd
+        total += private_total(subject) + subject.cash_usd - subject.liabilities_usd
         out.append({"t": t, "v": total})
 
     return out
@@ -468,6 +469,45 @@ class Subject:
     birth_date: str | None = None   # "YYYY-MM-DD" — static fact, age is computed client-side
     residence: str | None = None    # city/region only, never an address — see holdings.example.json
     bio: str | None = None          # birthplace + last school attended, one/two sentences — see holdings.example.json
+    # Stakes in private companies, each valued as stake x the company's
+    # last funding-round valuation — see holdings.example.json.
+    private_marks: list[dict] = field(default_factory=list)
+    estimate_as_of: str | None = None   # when the hand-set figures were last checked
+    estimate_source: str | None = None  # whose estimate they come from ("Forbes")
+    estimate_note: str | None = None    # what privateStakesUsd covers
+
+
+def private_total(subject: Subject) -> float:
+    """privateStakesUsd plus every private company stake at its last valuation."""
+    return subject.private_stakes_usd + sum(
+        float(m["stakeFraction"]) * float(m["valuationUsd"]) for m in subject.private_marks
+    )
+
+
+def estimate_payload(subject: Subject) -> dict | None:
+    """
+    What the app shows about the parts of someone's wealth that aren't
+    priced live: each private stake with its valuation and date, the
+    remaining hand-set figure, and when and from whom it was last checked.
+    None for someone whose wealth is all public stock.
+    """
+    if not subject.private_marks and not subject.private_stakes_usd:
+        return None
+    return {
+        "asOf": subject.estimate_as_of,
+        "source": subject.estimate_source,
+        "otherUsd": subject.private_stakes_usd,
+        "otherLabel": subject.estimate_note,
+        "stakes": [
+            {
+                "company": m["company"],
+                "stakeFraction": float(m["stakeFraction"]),
+                "valuationUsd": float(m["valuationUsd"]),
+                "valuedOn": m.get("valuedOn"),
+            }
+            for m in subject.private_marks
+        ],
+    }
 
 
 def net_worth(subject: Subject, prices: dict[str, float]) -> float | None:
@@ -483,7 +523,7 @@ def net_worth(subject: Subject, prices: dict[str, float]) -> float | None:
         if price is None:
             return None
         total += h.shares * price
-    return total + subject.private_stakes_usd + subject.cash_usd - subject.liabilities_usd
+    return total + private_total(subject) + subject.cash_usd - subject.liabilities_usd
 
 
 # ---------------------------------------------------------------- flights
@@ -1583,7 +1623,7 @@ def vessel_status(
 
         # Same generalized condition as flight_status()'s equivalent block
         # above (see its comment) — this is the exact bug that let a real,
-        # freshly-caught AIS fix (Ellison's MUSASHI) sit matched to a real
+        # freshly-caught AIS fix (a tracked yacht's) sit matched to a real
         # port in locationBreakdown/last_port while currentPortUnlocode and
         # the map pin stayed stuck on null, because the vessel had been
         # sitting IN_PORT with no match ever since before ports.csv existed
@@ -1894,40 +1934,44 @@ def fetch_news(query: str, limit: int = NEWS_FETCH_LIMIT) -> list[dict]:
 
 
 # Fixed taxonomy, not whatever labels the model feels like inventing per
-# call — a chip UI needs a stable, finite set of labels so the same theme
-# always gets the same color/name across refreshes. "Other" is last on
-# purpose — same "reserved fold slot" role a categorical palette's own last
-# slot always plays (see newsThemeColor() in PersonDetailScreen.kt), so a
-# headline that doesn't fit anywhere specific lands on that dedicated
-# visual treatment rather than crowding a real theme's color.
+# call — a tag UI needs a stable, finite set of labels so the same theme
+# always gets the same name across refreshes. These are the only
+# themes the app tracks, shows or counts. "Other" is the classifier's escape
+# hatch for a headline that fits none of them: it's stored (so the headline
+# isn't re-sent to Gemini every pass) but never shown or tallied.
 #
-# Seven real themes + "Other" = 8 total, not more: the dataviz skill's own
-# categorical-color methodology caps a reliably CVD-safe palette at 8 hues
-# (references/color-formula.md — "8 hues, fixed order... a 9th series is
-# never a generated hue, it folds into Other"), and a brute-force OKLCH
-# search confirmed this in practice for this exact palette — a 9th distinct
-# hue separated enough from the other 8 (5 existing categorical slots + the
-# Other-orange + this file's one new addition + this app's 3 reserved
-# status colors) simply doesn't exist in practice. So this expansion adds
-# exactly ONE new theme, not several: "Profile & Commentary" was picked
-# because it was the actual, observed gap — real headlines (an encyclopedia-
-# style biography, an inspirational-quote piece) that weren't about this
-# person's markets/business/tech/legal/controversy activity at all, and so
-# were landing in "Other" even though they were substantive, classifiable
-# coverage. See classify_news_themes()'s prompt for exactly how it's worded
-# to stay distinct from "Public Life & Controversy" (conflict/scandal —
-# something happened that reflects on them, positively or negatively) vs.
-# "Profile & Commentary" (reflective — someone writing ABOUT them: bios,
-# interviews, retrospectives, quotes, "lessons from" pieces).
-NEWS_THEMES = (
-    "Markets & Wealth",
+# Changing this list is safe: migrate_news_themes() notices and starts the
+# themes over from scratch (see there).
+TRACKED_NEWS_THEMES = (
+    "Alien News",
+    "Bunkers",
     "Business & Deals",
-    "Legal & Regulatory",
+    "God & Spirituality",
     "Technology & Innovation",
-    "Public Life & Controversy",
-    "Profile & Commentary",
-    "Other",
+    "Markets & Wealth",
+    "War & Defense",
 )
+NEWS_THEMES = TRACKED_NEWS_THEMES + ("Other",)
+
+
+def migrate_news_themes(state: dict) -> None:
+    """
+    Runs only when NEWS_THEMES differs from the list state.json was last
+    classified against, and starts the themes over: every all-time tally is
+    wiped and every cached headline goes back to unclassified, so the
+    normal pass re-sorts it under the new list. Keeping counts or tags made
+    under an old list would tilt both the all-time tallies and what the app
+    shows as trending.
+    """
+    if state.get("news_themes") == list(NEWS_THEMES):
+        return
+    for items in state.get("news", {}).values():
+        for item in items:
+            item["theme"] = None
+    for entry in state.get("lifetime", {}).values():
+        entry.pop("newsThemeCounts", None)
+        entry.pop("newsThemeSeenTitles", None)
+    state["news_themes"] = list(NEWS_THEMES)
 
 
 def accumulate_lifetime_news_themes(
@@ -1964,7 +2008,7 @@ def accumulate_lifetime_news_themes(
     or the seen-titles set: an unclassified headline gets a fair chance to
     be tallied once it's actually successfully classified on some future
     pass, rather than being permanently skipped just because this attempt
-    happened to fail.
+    happened to fail. An "Other" headline is marked seen but not counted.
     """
     counts = lifetime_entry.setdefault("newsThemeCounts", {})
     seen_titles = lifetime_entry.setdefault("newsThemeSeenTitles", [])
@@ -1974,7 +2018,9 @@ def accumulate_lifetime_news_themes(
             continue
         seen_set.add(item["title"])
         seen_titles.append(item["title"])
-        counts[theme] = counts.get(theme, 0) + 1
+        # "Other" is only the classifier's fallback, never a tracked theme.
+        if theme in TRACKED_NEWS_THEMES:
+            counts[theme] = counts.get(theme, 0) + 1
 
 
 def classify_news_themes(titles: list[str]) -> list[str | None]:
@@ -2026,7 +2072,7 @@ def classify_news_themes(titles: list[str]) -> list[str | None]:
     doesn't parse as JSON, or a response of the wrong shape all fall back to
     the same thing: a same-length list of Nones, exactly like fetch_news()
     itself returns [] on failure — the "IN THE NEWS" list and its theme tags
-    already treat a missing theme as "no tag shown" (see NewsRow), not an
+    already treat a missing theme as "no tag shown" (see NewsCard), not an
     error, so classification being entirely unavailable never blocks a
     snapshot pass or shows anything broken to the client. This function
     never raises.
@@ -2050,15 +2096,21 @@ def classify_news_themes(titles: list[str]) -> list[str | None]:
         "Classify each numbered news headline below into exactly one theme "
         "from this fixed list:\n"
         f"{theme_list}\n\n"
-        "\"Public Life & Controversy\" is for something that HAPPENED "
-        "involving this person — a dispute, scandal, backlash, lawsuit-"
-        "adjacent controversy, or public reaction to their actions or "
-        "statements. \"Profile & Commentary\" is for someone WRITING ABOUT "
-        "this person rather than reporting a new event — biographies, "
-        "encyclopedia-style profiles, interviews, career retrospectives, "
-        "quotes or motivational pieces attributed to them, and \"lessons "
-        "from\"/\"best of\" style commentary.\n"
-        "Use \"Other\" only when none of the specific themes genuinely fit.\n\n"
+        "\"Alien News\" is anything about aliens, UFOs or UAPs, or the "
+        "search for life beyond Earth. \"Bunkers\" is any mention of a "
+        "bunker, doomsday shelter, underground or survival compound, or "
+        "Miami's \"Billionaire Bunker\" island; it wins over every other "
+        "theme when a bunker is mentioned at all. \"God & Spirituality\" "
+        "is faith, God, religion, prayer, spirituality or the meaning of "
+        "life, including this person talking about them. \"War & Defense\" is military "
+        "matters and wars: ongoing conflicts, armed forces, weapons and "
+        "defense policy, including this person commenting on them or their "
+        "companies' part in them. \"Business & Deals\" is companies, deals, "
+        "acquisitions, contracts and management. \"Technology & "
+        "Innovation\" is products, launches, research and engineering. "
+        "\"Markets & Wealth\" is stock moves, net worth, rankings and pay.\n"
+        "Use \"Other\" for anything that fits none of these (politics, "
+        "lawsuits, personal life, profiles and so on).\n\n"
         f"Headlines:\n{numbered}\n\n"
         "Respond with ONLY a JSON array of theme strings, in the same order "
         "as the headlines, one entry per headline, using the exact theme "
@@ -2147,7 +2199,7 @@ def fetch_wikipedia_info(title: str) -> dict | None:
 
     Separately: the summary endpoint's "thumbnail" is simply whatever image
     a page's infobox happens to be set to — usually a real photo, but for
-    some people (Amancio Ortega among them) that's a coat of arms, flag, or
+    some people that's a coat of arms, flag, or
     seal instead of a portrait. Every one of those is distributed as SVG on
     Wikipedia/Commons; an actual photograph never is. So an SVG thumbnail
     gets dropped the same way a non-Commons one does — same "no image beats
@@ -2211,6 +2263,10 @@ def load_subjects() -> list[Subject]:
                 birth_date=entry.get("birthDate"),
                 residence=entry.get("residence"),
                 bio=entry.get("bio"),
+                private_marks=list(entry.get("privateStakes") or []),
+                estimate_as_of=entry.get("estimateAsOf"),
+                estimate_source=entry.get("estimateSource"),
+                estimate_note=entry.get("estimateNote"),
             )
         )
     return subjects
@@ -2228,6 +2284,59 @@ def save_state(state: dict) -> None:
     with open(tmp, "w", encoding="utf-8") as fh:
         json.dump(state, fh)
     os.replace(tmp, STATE_PATH)
+
+
+# Every per-person table in state.json, keyed by subject id.
+PER_PERSON_STATE_KEYS = (
+    "history", "news", "wikipedia", "day_open", "lifetime",
+    "flight_payload", "vessel_payload", "crossing_tracking",
+)
+
+
+def forget_untracked(state: dict, subjects: list[Subject]) -> None:
+    """
+    Drops everything state.json still holds about anyone who isn't in
+    holdings.json any more: price history, news, Wikipedia info, flight and
+    vessel trails, lifetime tallies and crossings. Without this, removing a
+    person from holdings.json only stopped their data being refreshed;
+    what was already collected stayed in state.json for good.
+
+    An empty subject list is treated as a broken holdings.json, not as
+    "forget everyone", so a bad edit can't wipe the whole state.
+    """
+    if not subjects:
+        return
+    ids = {s.id for s in subjects}
+    hexes = {s.icao_hex.lower() for s in subjects if s.icao_hex}
+    mmsis = {str(s.mmsi) for s in subjects if s.mmsi}
+
+    for key in PER_PERSON_STATE_KEYS:
+        table = state.get(key)
+        if isinstance(table, dict):
+            for gone in [k for k in table if k not in ids]:
+                del table[gone]
+
+    flights = state.get("flights")
+    if isinstance(flights, dict):
+        for gone in [k for k in flights if k.lower() not in hexes]:
+            del flights[gone]
+    vessels = state.get("vessels")
+    if isinstance(vessels, dict):
+        for gone in [k for k in vessels if str(k) not in mmsis]:
+            del vessels[gone]
+
+    crossings = state.get("crossing_history")
+    if isinstance(crossings, list):
+        kept = [e for e in crossings if e.get("personId") in ids]
+        if len(kept) != len(crossings):
+            # Indices shift, so rebuild the open-entry lookup the same way
+            # build_snapshot()'s 7-day trim does.
+            state["crossing_history"] = kept
+            state["crossing_tracking"] = {
+                e["personId"]: {"over": True, "index": i}
+                for i, e in enumerate(kept)
+                if e.get("ongoing")
+            }
 
 
 CROSSING_HISTORY_LIMIT = 200   # exposed-in-snapshot cap; the stored list is separately
@@ -2284,6 +2393,8 @@ def build_snapshot() -> dict:
     now = int(time.time())
     subjects = load_subjects()
     state = load_state()
+    forget_untracked(state, subjects)
+    migrate_news_themes(state)
     state["pass"] = state.get("pass", 0) + 1
     passes = state["pass"]
 
@@ -2320,6 +2431,14 @@ def build_snapshot() -> dict:
                 continue
 
             series = history.get(subject.id)
+            # Someone who just gained a priced stock (an estimate-only person
+            # given real shares) still has a dead-flat history; rebuild it
+            # from the stock's real closes instead of keeping the flat line.
+            if (
+                series and subject.holdings and isinstance(series[-1], dict)
+                and len({s.get("v") for s in series if isinstance(s, dict)}) == 1
+            ):
+                series = None
             if not series or not isinstance(series[-1], dict):
                 # Either genuinely new, or a leftover history entry in a shape
                 # this code no longer writes (e.g. a bare number instead of a
@@ -2440,10 +2559,14 @@ def build_snapshot() -> dict:
                 and wiki_entry.get("photoUrl")
                 and wiki_entry["photoUrl"].lower().split("?")[0].endswith(".svg")
             )
+            # A placeholder from a failed lookup has no Wikipedia link; it's
+            # retried after an hour, not left empty for a whole month.
+            wiki_failed = bool(wiki_entry) and not wiki_entry.get("wikipediaUrl")
             wiki_stale = (
                 not wiki_entry
                 or wiki_photo_bad
-                or (now - wiki_entry.get("fetchedAt", 0)) >= WIKI_REFRESH_SECONDS
+                or (now - wiki_entry.get("fetchedAt", 0))
+                >= (WIKI_RETRY_SECONDS if wiki_failed else WIKI_REFRESH_SECONDS)
             )
             if subject.wikipedia_title and wiki_stale:
                 if wiki_photo_bad:
@@ -2456,7 +2579,8 @@ def build_snapshot() -> dict:
                     wiki_cache[subject.id] = {**info, "fetchedAt": now}
                 elif wiki_entry is None:
                     # First attempt failed outright — cache a placeholder so a
-                    # dead lookup doesn't retry every single pass.
+                    # dead lookup doesn't retry every single pass (it's tried
+                    # again after WIKI_RETRY_SECONDS, see wiki_failed above).
                     wiki_cache[subject.id] = {"wikipediaUrl": None, "photoUrl": None, "fetchedAt": now}
             wiki_entry = wiki_cache.get(subject.id, {})
 
@@ -2469,6 +2593,9 @@ def build_snapshot() -> dict:
                 for share in flight.get("locationBreakdown") or []:
                     if share["bucket"] not in ("IN_FLIGHT", "NO_SIGNAL", "UNKNOWN_AIRPORT", "OTHER"):
                         used_icaos.add(share["bucket"])
+                # All-time places need names too, or the app shows raw codes.
+                for loc in flight.get("lifetimeLocations") or []:
+                    used_icaos.add(loc["location"])
 
             if vessel:
                 for k in ("departedPortUnlocode", "arrivedPortUnlocode", "currentPortUnlocode"):
@@ -2479,6 +2606,8 @@ def build_snapshot() -> dict:
                 for share in vessel.get("locationBreakdown") or []:
                     if share["bucket"] not in ("UNDERWAY", "NO_SIGNAL", "UNKNOWN_PORT", "OTHER"):
                         used_unlocodes.add(share["bucket"])
+                for loc in vessel.get("lifetimeLocations") or []:
+                    used_unlocodes.add(loc["location"])
 
             track_crossing(state, subject, value, now)
             if value >= THRESHOLD_USD and current_trillionaire is None:
@@ -2501,9 +2630,19 @@ def build_snapshot() -> dict:
                     # last 48 raw samples (~4h at this project's real 5-minute
                     # polling cadence) to a real rolling 7 days.
                     "history": [s["v"] for s in history[subject.id]],
+                    # Which stocks are priced live, and what isn't (see
+                    # estimate_payload) — so the app can say how each
+                    # number is made.
+                    "pricedTickers": [h.ticker.upper() for h in subject.holdings],
+                    "estimate": estimate_payload(subject),
                     "flight": flight,
                     "vessel": vessel,
-                    "news": news,
+                    # "Other" stays in state.json (so it isn't re-sent to
+                    # Gemini) but never reaches the app.
+                    "news": [
+                        dict(item, theme=item.get("theme") if item.get("theme") in TRACKED_NEWS_THEMES else None)
+                        for item in news
+                    ],
                     # Permanent, never-pruned count of how many DISTINCT
                     # headlines have ever been classified into each theme for
                     # this person — see accumulate_lifetime_news_themes()'s
@@ -2514,6 +2653,7 @@ def build_snapshot() -> dict:
                         (
                             {"theme": theme, "count": count}
                             for theme, count in lifetime_entry.get("newsThemeCounts", {}).items()
+                            if theme in TRACKED_NEWS_THEMES
                         ),
                         key=lambda x: -x["count"],
                     ),

@@ -13,7 +13,7 @@ import androidx.compose.ui.unit.dp
 
 /**
  * One series, so no legend — the row it sits in names it.
- * 2dp stroke, recessive, with a single end marker for "you are here".
+ * A thin 1dp line, with a single end marker for "you are here".
  */
 @Composable
 fun Sparkline(
@@ -29,12 +29,13 @@ fun Sparkline(
         val span = (max - min).takeIf { it > 0.0 } ?: 1.0
 
         val stepX = size.width / (values.size - 1).toFloat()
-        // Inset so the 2dp stroke and the end dot are never clipped.
+        // Inset so the stroke and the end dot are never clipped.
         val pad = 4.dp.toPx()
         val usableH = (size.height - pad * 2).coerceAtLeast(1f)
 
         fun pointAt(index: Int): Offset {
-            val norm = ((values[index] - min) / span).toFloat()
+            // A dead-flat series sits mid-height rather than on the floor.
+            val norm = if (max == min) 0.5f else ((values[index] - min) / span).toFloat()
             return Offset(
                 x = index * stepX,
                 y = pad + (1f - norm) * usableH
@@ -54,14 +55,14 @@ fun Sparkline(
             path = path,
             color = color,
             style = Stroke(
-                width = 2.dp.toPx(),
+                width = 1.dp.toPx(),
                 cap = StrokeCap.Round,
                 join = StrokeJoin.Round
             )
         )
 
         val end = pointAt(values.size - 1)
-        drawCircle(color = color, radius = 4.dp.toPx() / 2f, center = end)
+        drawCircle(color = color, radius = 1.5.dp.toPx(), center = end)
     }
 }
 

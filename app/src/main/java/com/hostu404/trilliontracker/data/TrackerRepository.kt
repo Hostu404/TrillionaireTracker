@@ -13,9 +13,30 @@ class TrackerRepository(
      */
     suspend fun load(): LoadResult = try {
         val source = remote ?: seed
-        LoadResult(snapshot = source.fetch(), fromSeed = remote == null, error = null)
+        LoadResult(snapshot = source.fetch().onlyTracked(), fromSeed = remote == null, error = null)
     } catch (t: Throwable) {
-        LoadResult(snapshot = seed.fetch(), fromSeed = true, error = t.message ?: "network error")
+        LoadResult(snapshot = seed.fetch().onlyTracked(), fromSeed = true, error = t.message ?: "network error")
+    }
+
+    /**
+     * Keeps [Config.TRACKED_PEOPLE] and drops everyone else, crossings
+     * included, and keeps only [Config.TRACKED_NEWS_THEMES] on headlines and
+     * in the all-time theme tally.
+     */
+    private fun Snapshot.onlyTracked(): Snapshot {
+        val ids = Config.TRACKED_PEOPLE
+        val themes = Config.TRACKED_NEWS_THEMES
+        return copy(
+            people = people.filter { it.id in ids }.map { person ->
+                person.copy(
+                    news = person.news.map { if (it.theme in themes) it else it.copy(theme = null) },
+                    lifetimeNewsThemes = person.lifetimeNewsThemes.filter { it.theme in themes }
+                )
+            },
+            crossingHistory = crossingHistory.filter { it.personId in ids },
+            lastCrossing = lastCrossing?.takeIf { it.personId in ids },
+            currentTrillionaireId = currentTrillionaireId?.takeIf { it in ids }
+        )
     }
 
     data class LoadResult(

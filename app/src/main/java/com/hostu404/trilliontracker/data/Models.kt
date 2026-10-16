@@ -204,7 +204,11 @@ data class Person(
      * image. Null means no free photo was available, not that the fetch
      * failed to try.
      */
-    val photoUrl: String? = null
+    val photoUrl: String? = null,
+    /** Stocks priced live for this person (empty when none are). */
+    val pricedTickers: List<String> = emptyList(),
+    /** The parts of their wealth that aren't priced live; null when there are none. */
+    val estimate: WealthEstimate? = null
 ) {
     val isOverThreshold: Boolean get() = netWorthUsd >= 1_000_000_000_000.0
 }
@@ -518,17 +522,16 @@ data class NewsItem(
     val url: String,
     val publishedEpoch: Long,
     /**
-     * One of a fixed set of theme labels ("Markets & Wealth", "Business &
-     * Deals", "Legal & Regulatory", "Technology & Innovation", "Public Life
-     * & Controversy", "Profile & Commentary", "Other") — see
-     * `classify_news_themes()` and `NEWS_THEMES` in snapshot_worker.py for
-     * the taxonomy (including why it's capped at these 7 real themes + one
-     * fold slot, not more) and how a
-     * headline gets sorted into it (a Google Gemini API call, backend-side
-     * only — this app has no on-device classification and never ships an
-     * API key to the client). Rendered as a small colored tag next to the
-     * headline in [com.hostu404.trilliontracker.ui.screens] — see
-     * `newsThemeColor` there for the theme -> color mapping.
+     * One of [com.hostu404.trilliontracker.data.Config.TRACKED_NEWS_THEMES]
+     * ("Alien News", "Bunkers", "Business & Deals", "God & Spirituality",
+     * "Technology & Innovation", "Markets & Wealth", "War & Defense") — see
+     * `classify_news_themes()`
+     * and `TRACKED_NEWS_THEMES` in snapshot_worker.py for how a headline
+     * gets sorted into one (a Google Gemini API call, backend-side only —
+     * this app has no on-device classification and never ships an API key
+     * to the client). A headline that fits none of them has no theme.
+     * Rendered as a small grey tag next to the headline in
+     * [com.hostu404.trilliontracker.ui.screens].
      *
      * Null in two ordinary, non-error situations, not just when something's
      * gone wrong: the backend classifier isn't configured or its call
@@ -551,6 +554,35 @@ data class NewsItem(
  * [count] accumulates and why it's a count of distinct headlines rather
  * than a count of classification passes.
  */
+/**
+ * The hand-set part of someone's net worth — see backend/holdings.json:
+ * private company stakes, each at the company's last funding-round
+ * valuation, plus one remaining figure ([otherUsd], described by
+ * [otherLabel]). [asOf] ("YYYY-MM-DD") and [source] say when and from whom
+ * it was last checked.
+ */
+@Serializable
+data class WealthEstimate(
+    val asOf: String? = null,
+    val source: String? = null,
+    val otherUsd: Double = 0.0,
+    val otherLabel: String? = null,
+    val stakes: List<StakeMark> = emptyList()
+) {
+    val totalUsd: Double get() = otherUsd + stakes.sumOf { it.valueUsd }
+}
+
+/** A stake in a private company: [stakeFraction] of [valuationUsd], as valued on [valuedOn]. */
+@Serializable
+data class StakeMark(
+    val company: String,
+    val stakeFraction: Double,
+    val valuationUsd: Double,
+    val valuedOn: String? = null
+) {
+    val valueUsd: Double get() = stakeFraction * valuationUsd
+}
+
 @Serializable
 data class NewsThemeShare(
     val theme: String,

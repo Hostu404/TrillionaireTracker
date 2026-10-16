@@ -8,12 +8,10 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -24,19 +22,19 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.PathEffect
-import androidx.compose.ui.graphics.drawscope.Fill
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.text.TextMeasurer
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.drawText
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.unit.dp
@@ -64,7 +62,7 @@ import com.hostu404.trilliontracker.ui.theme.TT
  *    always fall here — there's no free live AIS source this app can call
  *    the way [com.hostu404.trilliontracker.data.OpenSkyClient] covers
  *    aircraft) or signal has gone quiet; the pin marks the last confirmed
- *    position instead, and [caption] says so.
+ *    position instead.
  */
 data class MapPin(
     val label: String,
@@ -73,7 +71,8 @@ data class MapPin(
     /** "✈" or "⚓" — which of the two this pin is. */
     val glyph: String,
     val isLive: Boolean,
-    val caption: String,
+    /** Only for a live in-flight fix: speed and source ("~450 kt via OpenSky"). */
+    val caption: String? = null,
     /**
      * True for the [FlightStatus.currentLat]/[com.hostu404.trilliontracker.data.VesselStatus.currentLat]
      * fallback added 2026-09-23: a real fix that didn't resolve to any known
@@ -262,6 +261,14 @@ private fun DrawScope.drawTextSafely(
 private const val DEFAULT_SCALE = 1.6f
 private const val FOCUS_SCALE = 4.5f
 
+/**
+ * Line-art in the app's black and white: no land fill, grey outlines, and
+ * white pins told apart by shape (filled = live, ring = last known, dashed
+ * ring = approximate) rather than colour.
+ */
+private val MAP_OUTLINE = Color(0xFF6E6E6E)
+private val MAP_HEIGHT = 180.dp
+
 @Composable
 fun WorldMapCard(
     countries: List<CountryShape>,
@@ -281,239 +288,214 @@ fun WorldMapCard(
     // which point the buttons follow that new object instead.
     var focusedPin by remember { mutableStateOf<MapPin?>(null) }
 
-    // Re-tinted for the Cyberpunk-inspired palette (cyan/teal on near-black),
-    // rechecked with the same contrast math that caught the original
-    // invisible-landmass bug: fill vs background clears 3:1 (3.31), the
-    // border clears it by a wide margin (9.71), and land vs ocean is once
-    // again unambiguous rather than a flat dark field with floating labels.
-    val countryFill = Color(0xFF2E6B7D)
-    val countryBorder = Color(0xFF5FC3DB)
-    val countryLabelInk = Color(0xFFD8F5FC)
-    val oceanInk = Color(0xFF3AA0B8)
-    val mapBg = Color(0xFF060B0E)
-
     val rendered = remember(countries) {
         countries.map { CountryRender(it.name, it.rings, centroidOf(it)) }
     }
 
-    Column(modifier = modifier) {
-        Text(
-            text = "[ MAP ]",
-            color = TT.accentCyan,
-            fontSize = 11.sp,
-            fontWeight = FontWeight.SemiBold,
-            letterSpacing = 1.5.sp
-        )
-        Spacer(Modifier.height(10.dp))
+    // Just the map: it sits inside the person page's Movements card, which
+    // carries the frame, the heading and what each pin is.
+    BoxWithConstraints(
+        modifier
+            .fillMaxWidth()
+            .height(MAP_HEIGHT)
+            .clipToBounds()
+    ) {
+        val density = LocalDensity.current
+        val widthPx = with(density) { maxWidth.toPx() }
+        val heightPx = with(density) { maxHeight.toPx() }
 
-        BoxWithConstraints(
-            Modifier
-                .fillMaxWidth()
-                .height(260.dp)
-                .clip(TT.panelShape(14.dp))
-                .background(mapBg)
-        ) {
-            val density = LocalDensity.current
-            val widthPx = with(density) { maxWidth.toPx() }
-            val heightPx = with(density) { maxHeight.toPx() }
+        // Shared by the initial auto-center, the "reset" button, and an
+        // explicit focus request — one place that turns a lat/lon into
+        // the scale+offset that puts it in the middle of the viewport.
+        fun focusOn(pin: MapPin?, targetScale: Float) {
+            if (pin == null || widthPx <= 0f) return
+            scale = targetScale
+            val mapWidth = widthPx * targetScale
+            val mapHeight = mapWidth / 2f
+            val p = projectLonLat(pin.lon, pin.lat, mapWidth, mapHeight)
+            offset = Offset(widthPx / 2f - p.x, heightPx / 2f - p.y)
+        }
 
-            // Shared by the initial auto-center, the "reset" button, and an
-            // explicit focus request — one place that turns a lat/lon into
-            // the scale+offset that puts it in the middle of the viewport.
-            fun focusOn(pin: MapPin?, targetScale: Float) {
-                if (pin == null || widthPx <= 0f) return
-                scale = targetScale
-                val mapWidth = widthPx * targetScale
-                val mapHeight = mapWidth / 2f
-                val p = projectLonLat(pin.lon, pin.lat, mapWidth, mapHeight)
-                offset = Offset(widthPx / 2f - p.x, heightPx / 2f - p.y)
-            }
-
-            LaunchedEffect(pins, widthPx) {
-                // `centered` used to be set the instant this ran once with a
-                // non-zero width, even if `pins` was still empty that pass
-                // (a brand-new, currently-airborne person can genuinely have
-                // zero pins until either recentStops gets its first entry or
-                // rememberLiveFlightPosition's first async fetch resolves -
-                // see flightMapPin's `?: return null`). That permanently
-                // latched `centered = true` on an empty pin list, so once a
-                // real pin did arrive a moment later, this effect re-ran
-                // (pins is a key) but the guard above short-circuited it and
-                // the map was left sitting at the default offset forever,
-                // recoverable only by tapping a card to fire a
-                // [MapFocusRequest]. Only latch once there's an actual pin to
-                // center on.
-                if (!centered && widthPx > 0f) {
-                    val initial = pins.firstOrNull()
-                    if (initial != null) {
-                        centered = true
-                        focusedPin = initial
-                        focusOn(initial, DEFAULT_SCALE)
-                    }
+        LaunchedEffect(pins, widthPx) {
+            // `centered` used to be set the instant this ran once with a
+            // non-zero width, even if `pins` was still empty that pass
+            // (a brand-new, currently-airborne person can genuinely have
+            // zero pins until either recentStops gets its first entry or
+            // rememberLiveFlightPosition's first async fetch resolves -
+            // see flightMapPin's `?: return null`). That permanently
+            // latched `centered = true` on an empty pin list, so once a
+            // real pin did arrive a moment later, this effect re-ran
+            // (pins is a key) but the guard above short-circuited it and
+            // the map was left sitting at the default offset forever,
+            // recoverable only by tapping a card to fire a
+            // [MapFocusRequest]. Only latch once there's an actual pin to
+            // center on.
+            if (!centered && widthPx > 0f) {
+                val initial = pins.firstOrNull()
+                if (initial != null) {
+                    centered = true
+                    focusedPin = initial
+                    focusOn(initial, DEFAULT_SCALE)
+                } else {
+                    // Nothing to show: the whole world, centred.
+                    scale = 1f
+                    offset = Offset(0f, (heightPx - widthPx / 2f) / 2f)
                 }
             }
+        }
 
-            // Re-centers only on an actual tap (see [MapFocusRequest.token]),
-            // never as a side effect of a pin's own fields ticking over —
-            // and hands the buttons below this same new pin as their target.
-            LaunchedEffect(focusRequest?.token, widthPx) {
-                if (focusRequest != null && widthPx > 0f) {
-                    focusedPin = focusRequest.pin
-                    focusOn(focusRequest.pin, FOCUS_SCALE)
-                }
+        // Re-centers only on an actual tap (see [MapFocusRequest.token]),
+        // never as a side effect of a pin's own fields ticking over —
+        // and hands the buttons below this same new pin as their target.
+        LaunchedEffect(focusRequest?.token, widthPx) {
+            if (focusRequest != null && widthPx > 0f) {
+                focusedPin = focusRequest.pin
+                focusOn(focusRequest.pin, FOCUS_SCALE)
+            }
+        }
+
+        // The expensive part — see [buildCountryPaths]'s own doc comment
+        // for why this is remembered rather than rebuilt inside the draw
+        // lambda below.
+        val countryPaths = remember(rendered, scale, offset, widthPx) {
+            buildCountryPaths(rendered, scale, offset, widthPx)
+        }
+
+        Canvas(Modifier.fillMaxWidth().height(MAP_HEIGHT)) {
+            val mapWidth = size.width * scale
+            val mapHeight = mapWidth / 2f
+            val off = offset
+
+            fun toCanvas(lon: Double, lat: Double): Offset {
+                val p = projectLonLat(lon, lat, mapWidth, mapHeight)
+                return Offset(p.x + off.x, p.y + off.y)
             }
 
-            // The expensive part — see [buildCountryPaths]'s own doc comment
-            // for why this is remembered rather than rebuilt inside the draw
-            // lambda below.
-            val countryPaths = remember(rendered, scale, offset, widthPx) {
-                buildCountryPaths(rendered, scale, offset, widthPx)
+            val outline = Stroke(width = 1.dp.toPx())
+            for (path in countryPaths) {
+                drawPath(path, color = MAP_OUTLINE, style = outline)
             }
 
-            Canvas(Modifier.fillMaxWidth().height(260.dp)) {
-                val mapWidth = size.width * scale
-                val mapHeight = mapWidth / 2f
-                val off = offset
-
-                fun toCanvas(lon: Double, lat: Double): Offset {
-                    val p = projectLonLat(lon, lat, mapWidth, mapHeight)
-                    return Offset(p.x + off.x, p.y + off.y)
-                }
-
-                for (path in countryPaths) {
-                    drawPath(path, color = countryFill, style = Fill)
-                    drawPath(path, color = countryBorder, style = Stroke(width = 1.dp.toPx()))
-                }
-
-                // Ocean/sea labels: always on, sparse enough not to collide.
-                for (ocean in OCEAN_LABELS) {
-                    val p = toCanvas(ocean.lon, ocean.lat)
-                    if (p.x < -60f || p.x > size.width + 60f || p.y < -20f || p.y > size.height + 20f) continue
-                    drawTextSafely(
-                        textMeasurer = textMeasurer,
-                        text = ocean.name,
-                        topLeft = Offset(p.x, p.y),
-                        style = TextStyle(color = oceanInk, fontSize = 10.sp, fontWeight = FontWeight.Medium)
-                    )
-                }
-
-                // Country labels only once zoomed in — see kdoc above for why.
-                if (scale > 3f) {
-                    for (country in rendered) {
-                        val p = toCanvas(country.centroid.lon, country.centroid.lat)
-                        if (p.x < 0f || p.x > size.width || p.y < 0f || p.y > size.height) continue
-                        drawTextSafely(
-                            textMeasurer = textMeasurer,
-                            text = country.name,
-                            topLeft = Offset(p.x, p.y),
-                            style = TextStyle(color = countryLabelInk, fontSize = 9.sp)
-                        )
-                    }
-                }
-
-                for (pin in pins) {
-                    val p = toCanvas(pin.lon, pin.lat)
-                    if (pin.isApproximate) {
-                        // Dashed ring, muted color — a real fix that didn't
-                        // resolve to a known place, so this pin is honestly
-                        // less certain than either of the two styles below.
-                        // See MapPin.isApproximate's doc comment.
-                        drawCircle(
-                            color = TT.inkMuted,
-                            radius = 6.dp.toPx(),
-                            center = p,
-                            style = Stroke(
-                                width = 1.5.dp.toPx(),
-                                pathEffect = PathEffect.dashPathEffect(floatArrayOf(4.dp.toPx(), 4.dp.toPx()))
-                            )
-                        )
-                    } else {
-                        val pinColor = if (pin.isLive) TT.good else TT.warning
-                        if (pin.isLive) {
-                            drawCircle(color = pinColor, radius = 5.dp.toPx(), center = p)
-                            drawCircle(color = Color.White, radius = 5.dp.toPx(), center = p, style = Stroke(width = 1.dp.toPx()))
-                        } else {
-                            // Hollow ring instead of a filled dot — visually distinct
-                            // "last known, not live" marker.
-                            drawCircle(color = pinColor, radius = 5.dp.toPx(), center = p, style = Stroke(width = 1.5.dp.toPx()))
-                        }
-                    }
-                    drawTextSafely(
-                        textMeasurer = textMeasurer,
-                        text = "${pin.glyph} ${pin.label}",
-                        topLeft = Offset(p.x + 8.dp.toPx(), p.y - 8.dp.toPx()),
-                        style = TextStyle(color = TT.inkPrimary, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
-                    )
-                }
-            }
-
-            // Zoom-to-location / reset — intentionally just two controls,
-            // stacked where a thumb naturally rests on a phone held in one
-            // hand, doing the one obvious thing each glyph suggests rather
-            // than a fuller map-control cluster.
-            Column(
-                modifier = Modifier
-                    .align(Alignment.BottomEnd)
-                    .padding(10.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                MapControlButton(
-                    glyph = "⌖",
-                    enabled = focusedPin != null,
-                    onClick = { focusOn(focusedPin, FOCUS_SCALE) }
+            // Ocean/sea labels: always on, sparse enough not to collide.
+            for (ocean in OCEAN_LABELS) {
+                val p = toCanvas(ocean.lon, ocean.lat)
+                if (p.x < -60f || p.x > size.width + 60f || p.y < -20f || p.y > size.height + 20f) continue
+                drawTextSafely(
+                    textMeasurer = textMeasurer,
+                    text = ocean.name,
+                    topLeft = Offset(p.x, p.y),
+                    style = TextStyle(color = TT.inkMuted, fontSize = 9.sp, fontFamily = FontFamily.Monospace)
                 )
-                MapControlButton(
-                    glyph = "⟲",
-                    enabled = focusedPin != null,
-                    onClick = { focusOn(focusedPin, DEFAULT_SCALE) }
+            }
+
+            // Country labels only once zoomed in — see kdoc above for why.
+            if (scale > 3f) {
+                for (country in rendered) {
+                    val p = toCanvas(country.centroid.lon, country.centroid.lat)
+                    if (p.x < 0f || p.x > size.width || p.y < 0f || p.y > size.height) continue
+                    drawTextSafely(
+                        textMeasurer = textMeasurer,
+                        text = country.name,
+                        topLeft = Offset(p.x, p.y),
+                        style = TextStyle(color = TT.inkSecondary, fontSize = 9.sp, fontFamily = FontFamily.Monospace)
+                    )
+                }
+            }
+
+            for (pin in pins) {
+                val p = toCanvas(pin.lon, pin.lat)
+                // A black disc under every pin so outlines never run
+                // through it.
+                drawCircle(color = TT.plane, radius = 8.dp.toPx(), center = p)
+                when {
+                    // Dashed ring — a real fix that didn't resolve to a
+                    // known place, so this pin is honestly less certain
+                    // than either of the two styles below. See
+                    // MapPin.isApproximate's doc comment.
+                    pin.isApproximate -> drawCircle(
+                        color = TT.inkPrimary,
+                        radius = 6.dp.toPx(),
+                        center = p,
+                        style = Stroke(
+                            width = 1.5.dp.toPx(),
+                            pathEffect = PathEffect.dashPathEffect(floatArrayOf(3.dp.toPx(), 3.dp.toPx()))
+                        )
+                    )
+                    pin.isLive -> drawCircle(color = TT.inkPrimary, radius = 5.dp.toPx(), center = p)
+                    // Hollow ring — "last known, not live".
+                    else -> drawCircle(
+                        color = TT.inkPrimary,
+                        radius = 5.dp.toPx(),
+                        center = p,
+                        style = Stroke(width = 1.5.dp.toPx())
+                    )
+                }
+                drawTextSafely(
+                    textMeasurer = textMeasurer,
+                    text = " ${pin.glyph} ${pin.label} ",
+                    topLeft = Offset(p.x + 9.dp.toPx(), p.y - 8.dp.toPx()),
+                    // Black behind the label so it stays readable over
+                    // the outlines.
+                    style = TextStyle(
+                        color = TT.inkPrimary,
+                        background = TT.plane,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold,
+                        fontFamily = FontFamily.Monospace
+                    )
                 )
             }
         }
 
-        Spacer(Modifier.height(8.dp))
-
-        Column {
-            pins.forEach { pin ->
-                Text(
-                    text = "${if (pin.isApproximate) "◌" else if (pin.isLive) "●" else "○"} ${pin.glyph} ${pin.label} — ${pin.caption}",
-                    color = TT.inkMuted,
-                    fontSize = 11.sp
-                )
-            }
-            if (pins.isEmpty()) {
-                Text(
-                    text = "No known position to place yet.",
-                    color = TT.inkMuted,
-                    fontSize = 11.sp
-                )
-            }
+        // Zoom-to-location / reset — intentionally just two controls,
+        // stacked where a thumb naturally rests on a phone held in one
+        // hand, doing the one obvious thing each glyph suggests rather
+        // than a fuller map-control cluster.
+        Column(
+            modifier = Modifier
+                .align(Alignment.BottomEnd)
+                .padding(10.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            MapControlButton(
+                glyph = "⌖",
+                enabled = focusedPin != null,
+                onClick = { focusOn(focusedPin, FOCUS_SCALE) }
+            )
+            MapControlButton(
+                glyph = "⟲",
+                enabled = focusedPin != null,
+                onClick = { focusOn(focusedPin, DEFAULT_SCALE) }
+            )
         }
     }
 }
 
+/** The text twin of a pin's shape on the map. */
+fun pinSymbol(pin: MapPin): String = when {
+    pin.isApproximate -> "◌"
+    pin.isLive -> "●"
+    else -> "○"
+}
+
 /**
- * "⌖" (zoom to the current position) and "⟲" (back to the default framing)
- * — the same rounded-square chip language as every other small control in
- * this app (see `SocialButton` in `PersonDetailScreen.kt`), not the panel's
- * cut-corner shape, which is reserved for cards.
+ * "⌖" (zoom to the current position) and "⟲" (back to the default framing):
+ * square, black, thin white border, like every other control in the app.
  */
 @Composable
 private fun MapControlButton(glyph: String, enabled: Boolean, onClick: () -> Unit) {
-    val shape = RoundedCornerShape(8.dp)
     Box(
         Modifier
-            .size(34.dp)
-            .clip(shape)
-            .background(TT.surfaceRaised.copy(alpha = if (enabled) 1f else 0.5f))
-            .border(1.dp, TT.border, shape)
+            .size(32.dp)
+            .background(TT.plane)
+            .border(1.dp, if (enabled) TT.border else TT.inkMuted, TT.panelShape)
             .clickable(enabled = enabled, onClick = onClick),
         contentAlignment = Alignment.Center
     ) {
         Text(
             text = glyph,
-            color = if (enabled) TT.accentCyan else TT.inkMuted,
-            fontSize = 16.sp,
-            fontWeight = FontWeight.Bold
+            color = if (enabled) TT.accent else TT.inkMuted,
+            fontSize = 15.sp
         )
     }
 }

@@ -81,6 +81,20 @@ object Format {
     fun agoShort(epochSeconds: Long, nowSeconds: Long): String =
         elapsedSince(epochSeconds, nowSeconds) + " ago"
 
+    /**
+     * One unit only ("45s", "12m", "5h", "3d"), for rows that have to stay
+     * on one line. Hours run up to 47h before switching to days.
+     */
+    fun coarseElapsed(epochSeconds: Long, nowSeconds: Long): String {
+        val s = (nowSeconds - epochSeconds).coerceAtLeast(0)
+        return when {
+            s < 60 -> "${s}s"
+            s < 3_600 -> "${s / 60}m"
+            s < 172_800 -> "${s / 3_600}h"
+            else -> "${s / 86_400}d"
+        }
+    }
+
     fun dateOnly(epochSeconds: Long): String {
         val i = Instant.ofEpochSecond(epochSeconds)
         return i.toString().substring(0, 10)
@@ -151,9 +165,13 @@ object Format {
     fun ageFrom(birthDateIso: String, today: LocalDate = LocalDate.now()): Int? =
         parseIsoDate(birthDateIso)?.let { birth -> Period.between(birth, today).years }
 
+    /** Whole days from a stored "2026-10-16" to [today]. */
+    fun daysSince(iso: String, today: LocalDate = LocalDate.now()): Long? =
+        parseIsoDate(iso)?.let { java.time.temporal.ChronoUnit.DAYS.between(it, today) }
+
     /** "June 28, 1971" from a stored "1971-06-28". */
-    fun birthDateLabel(birthDateIso: String): String? =
-        parseIsoDate(birthDateIso)?.format(LONG_DATE)
+    fun dateLabel(iso: String): String? =
+        parseIsoDate(iso)?.format(LONG_DATE)
 
     private fun parseIsoDate(value: String): LocalDate? =
         try {
