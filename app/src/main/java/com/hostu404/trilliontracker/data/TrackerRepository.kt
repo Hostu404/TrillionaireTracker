@@ -5,8 +5,6 @@ class TrackerRepository(
     private val seed: SnapshotSource = SeedSnapshotSource()
 ) {
 
-    val hasBackend: Boolean get() = remote != null
-
     /**
      * Never throws. A failed read falls back to the last good shape rather than
      * showing an empty screen, and the UI surfaces the staleness instead.
@@ -33,9 +31,7 @@ class TrackerRepository(
                     lifetimeNewsThemes = person.lifetimeNewsThemes.filter { it.theme in themes }
                 )
             },
-            crossingHistory = crossingHistory.filter { it.personId in ids },
-            lastCrossing = lastCrossing?.takeIf { it.personId in ids },
-            currentTrillionaireId = currentTrillionaireId?.takeIf { it in ids }
+            crossingHistory = crossingHistory.filter { it.personId in ids }
         )
     }
 

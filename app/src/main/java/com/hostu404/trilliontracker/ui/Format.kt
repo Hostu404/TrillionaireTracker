@@ -41,18 +41,6 @@ object Format {
     /** "4,213 nm" — a great-circle distance total, grouped for readability. */
     fun nauticalMiles(value: Double): String = grouped.format(value.roundToLong()) + " nm"
 
-    /** "241.3 billion" / "892.4 million" — a plain (non-dollar) compact count. */
-    fun compactCount(value: Double): String {
-        val v = abs(value)
-        return when {
-            v >= 1_000_000_000_000.0 -> String.format(Locale.UK, "%.2f trillion", v / 1_000_000_000_000.0)
-            v >= 1_000_000_000.0 -> String.format(Locale.UK, "%.1f billion", v / 1_000_000_000.0)
-            v >= 1_000_000.0 -> String.format(Locale.UK, "%.1f million", v / 1_000_000.0)
-            v >= 1_000.0 -> String.format(Locale.UK, "%.1f thousand", v / 1_000.0)
-            else -> grouped.format(v.roundToLong())
-        }
-    }
-
     /** Signed, always paired with a glyph at the call site. */
     fun signedCompactUsd(value: Double): String {
         val body = compactUsd(abs(value))
@@ -61,10 +49,6 @@ object Format {
 
     fun percentOf(value: Double, target: Double): String =
         String.format(Locale.UK, "%.2f%%", (value / target) * 100.0)
-
-    /** For an already-computed percentage figure (e.g. a true-tax-rate value of 3.27) — "3.3%". */
-    fun percentOneDecimal(pct: Double): String =
-        String.format(Locale.UK, "%.1f%%", pct)
 
     /** "2h 14m" */
     fun elapsedSince(epochSeconds: Long, nowSeconds: Long): String {
@@ -112,9 +96,6 @@ object Format {
             else -> "${minutes}m"
         }
     }
-
-    fun percent(fraction: Double): String =
-        String.format(Locale.UK, "%.0f%%", fraction * 100.0)
 
     /**
      * "18d" / "7mo" / "3y 4mo" / "40+ years" — coarse on purpose, for a

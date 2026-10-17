@@ -8,11 +8,8 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.remember
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
@@ -20,8 +17,6 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.clipRect
-import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.hostu404.trilliontracker.ui.Format
@@ -43,26 +38,21 @@ data class TimelineSegment(
     val style: SegmentStyle = SegmentStyle.SOLID
 )
 
-private data class LegendEntry(val label: String, val color: Color, val style: SegmentStyle, val totalSeconds: Long)
-
 /**
  * "Time by location" as an actual chronological log instead of a part-to-
  * whole shape — a single strip spanning [windowStartEpoch] to [windowEndEpoch]
  * ("now"), laid out left-to-right in the order things really happened, each
  * block sized by its own true duration rather than normalized into a shared
  * total. A busy week (three short hops) and a quiet one (one long stay) read
- * as visibly different strips. The legend below sorts by total time
- * (biggest first) — the strip answers "when," the legend answers "how much,"
- * and names every block, so a shade is never the only way to tell two apart.
+ * as visibly different strips. The caller names the blocks (see the
+ * stops table under it on a person's page).
  */
 @Composable
 fun TimelineStrip(
     segments: List<TimelineSegment>,
     windowStartEpoch: Long,
     windowEndEpoch: Long,
-    modifier: Modifier = Modifier,
-    /** Off when something else on the page already names every block. */
-    showLegend: Boolean = true
+    modifier: Modifier = Modifier
 ) {
     if (segments.isEmpty() || windowEndEpoch <= windowStartEpoch) return
     val spanSeconds = (windowEndEpoch - windowStartEpoch).toFloat().coerceAtLeast(1f)
@@ -106,49 +96,6 @@ fun TimelineStrip(
             Text(text = "now", color = TT.accent, fontSize = 10.sp)
         }
 
-        if (!showLegend) return@Column
-
-        Spacer(Modifier.height(6.dp))
-
-        val legend = remember(segments) {
-            segments
-                .groupBy { Triple(it.label, it.color, it.style) }
-                .map { (key, group) ->
-                    LegendEntry(key.first, key.second, key.third, group.sumOf { it.endEpoch - it.startEpoch })
-                }
-                .sortedByDescending { it.totalSeconds }
-        }
-        val legendTotal = legend.sumOf { it.totalSeconds }.coerceAtLeast(1L)
-
-        Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
-            legend.forEach { entry ->
-                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                    SegmentSwatch(color = entry.color, style = entry.style)
-                    Spacer(Modifier.width(8.dp))
-                    Text(
-                        text = entry.label,
-                        color = TT.inkSecondary,
-                        fontSize = 12.sp,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.weight(1f)
-                    )
-                    Text(
-                        text = Format.duration(entry.totalSeconds),
-                        color = TT.inkPrimary,
-                        fontSize = 12.sp
-                    )
-                    Spacer(Modifier.width(8.dp))
-                    Text(
-                        text = Format.percent(entry.totalSeconds.toDouble() / legendTotal.toDouble()),
-                        color = TT.inkMuted,
-                        fontSize = 11.sp,
-                        textAlign = TextAlign.End,
-                        modifier = Modifier.width(40.dp)
-                    )
-                }
-            }
-        }
     }
 }
 

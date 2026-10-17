@@ -71,14 +71,6 @@ object SeedData {
         return Snapshot(
             generatedAt = nowEpoch,
             nextUpdateIn = Config.POLL_INTERVAL_SECONDS,
-            currentTrillionaireId = people.firstOrNull { it.isOverThreshold }?.id,
-            lastCrossing = Crossing(
-                personId = "musk",
-                personName = "Elon Musk",
-                crossedAtEpoch = Instant.parse("2026-06-12T00:00:00Z").epochSecond,
-                heldForSeconds = 0L,
-                note = "First ever, on the SpaceX Nasdaq listing. Fell back below since."
-            ),
             people = people,
             airports = SEED_AIRPORTS,
             ports = SEED_PORTS
@@ -147,16 +139,6 @@ object SeedData {
                 AirportStop(icao = "KTEB", arrivedAtEpoch = nowEpoch - 349_000, departedAtEpoch = nowEpoch - 300_000),
                 AirportStop(icao = "KLAS", arrivedAtEpoch = nowEpoch - 520_000, departedAtEpoch = nowEpoch - 470_000)
             ),
-            // Consistent with recentStops above: KLAS->KTEB and KTEB->KAUS legs
-            // plus the current ongoing leg, all folded into IN_FLIGHT. Every
-            // second of the 520,000s tracked span is accounted for exactly
-            // once — same accounting the real backend does per pass.
-            locationBreakdown = listOf(
-                LocationShare(bucket = "IN_FLIGHT", seconds = 257_000),
-                LocationShare(bucket = "KAUS", seconds = 164_000),
-                LocationShare(bucket = "KLAS", seconds = 50_000),
-                LocationShare(bucket = "KTEB", seconds = 49_000)
-            ),
             trackedSeconds = 520_000
         )
 
@@ -173,11 +155,6 @@ object SeedData {
             recentStops = listOf(
                 AirportStop(icao = "KVNY", arrivedAtEpoch = nowEpoch - 79_200, departedAtEpoch = null),
                 AirportStop(icao = "KBFI", arrivedAtEpoch = nowEpoch - 400_000, departedAtEpoch = nowEpoch - 86_400)
-            ),
-            locationBreakdown = listOf(
-                LocationShare(bucket = "KBFI", seconds = 313_600),
-                LocationShare(bucket = "KVNY", seconds = 79_200),
-                LocationShare(bucket = "IN_FLIGHT", seconds = 7_200)
             ),
             trackedSeconds = 400_000,
             lastSeenEpoch = nowEpoch - 1_200,
@@ -209,7 +186,6 @@ object SeedData {
     private fun vesselFor(id: String, nowEpoch: Long): VesselStatus? = when (id) {
         "bezos" -> VesselStatus(
             name = "KORU",
-            mmsi = "319225400",
             state = VesselState.IN_PORT,
             verified = true,
             arrivedPortUnlocode = "USFLL",
@@ -226,7 +202,7 @@ object SeedData {
         // Real MMSI, but no live position for this static demo — same
         // UNKNOWN-with-no-fabricated-activity treatment as the plane-only
         // entries in flightFor() above.
-        "zuckerberg" -> VesselStatus(name = "LAUNCHPAD", mmsi = "538072122", state = VesselState.UNKNOWN, verified = true)
+        "zuckerberg" -> VesselStatus(name = "LAUNCHPAD", state = VesselState.UNKNOWN, verified = true)
         else -> null
     }
 

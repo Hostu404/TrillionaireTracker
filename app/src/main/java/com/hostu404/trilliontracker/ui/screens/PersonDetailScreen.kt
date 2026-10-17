@@ -1097,15 +1097,9 @@ private fun transitStyle(bucket: String): SegmentStyle = when (bucket) {
  * Reconstructs the trailing window as literal chronological blocks from
  * [FlightStatus.recentStops] — the same real arrival/departure epochs
  * the stops list under the strip shows, just laid out on a timeline instead
- * of read top to bottom. Deliberately not built from
- * [FlightStatus.locationBreakdown]: that field is a server-side aggregate
- * (bucket -> total seconds, no per-entry ordering promised), and deriving
- * totals from these same segments instead — see [TimelineStrip]'s own
- * legend — means the strip and its numbers can't drift out of sync with a
- * second source of truth.
+ * of read top to bottom, so the strip and the table can't disagree.
  *
- * Gaps get the same two-sentinel honesty [FlightStatus.locationBreakdown]
- * always used: the stretch before the first stop we have any record of is
+ * Gaps get the same two-sentinel honesty the backend uses: the stretch before the first stop we have any record of is
  * "No signal" (we genuinely don't know), while every gap *between* two
  * confirmed stops is "In flight" (it necessarily got from one to the other
  * somehow). A trailing gap after the last known stop — the aircraft has
@@ -1219,12 +1213,10 @@ private fun MovementPlaces(
         if (segments.isNotEmpty()) {
             Text(text = "${Format.duration(trackedSeconds)} tracked", color = TT.inkMuted, fontSize = 11.sp)
             Spacer(Modifier.height(4.dp))
-            // The table below names every block, so the strip's own legend is off.
             TimelineStrip(
                 segments = segments,
                 windowStartEpoch = nowSeconds - trackedSeconds,
-                windowEndEpoch = nowSeconds,
-                showLegend = false
+                windowEndEpoch = nowSeconds
             )
         }
 
@@ -1399,7 +1391,7 @@ private fun placeRows(
 /** One stop on a plane or boat's week: the airport ICAO or port UN/LOCODE, and when. */
 private data class StopLine(val code: String, val arrivedAtEpoch: Long, val departedAtEpoch: Long?)
 
-/** The maritime mirror of [bucketLabel] — see [VesselStatus.locationBreakdown]'s sentinel names. */
+/** The maritime mirror of [bucketLabel]. */
 private fun vesselBucketLabel(bucket: String, ports: Map<String, PortInfo>): String = when (bucket) {
     "UNDERWAY" -> "Underway"
     "NO_SIGNAL" -> "No signal"
@@ -1432,9 +1424,7 @@ private fun liveVesselColor(bucket: String): Color = when (bucket) {
 
 /**
  * The maritime mirror of [buildTimelineSegments] — same construction, same
- * reasoning (rebuilt from [PortStop]s rather than from
- * [VesselStatus.locationBreakdown] so the strip and its legend can't drift
- * out of sync with a second, server-computed total), just swapping in
+ * reasoning (rebuilt from [PortStop]s), just swapping in
  * [VesselState]/[PortStop]/[PortInfo] for their flight equivalents. "In
  * flight" becomes "Underway" for the gaps between two confirmed port stops —
  * a vessel that left one port and arrived at another necessarily spent that

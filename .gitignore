@@ -4,6 +4,8 @@
 build/
 local.properties
 captures/
+# Android Studio's signed-APK output; APKs go on GitHub Releases instead.
+app/release/
 .externalNativeBuild/
 .cxx/
 TT.File

@@ -182,7 +182,7 @@ private fun StatusPanel(state: TrackerUiState, threshold: Double) {
         }
 
         Spacer(Modifier.height(8.dp))
-        PanelLabel("TOTAL WEALTH")
+        PanelLabel("TOTAL WEALTH TRACKED")
         Text(
             text = Format.exactUsd(state.totalProjectedWealth),
             color = TT.inkPrimary,
@@ -208,7 +208,7 @@ private fun StatusPanel(state: TrackerUiState, threshold: Double) {
 @Composable
 private fun Trending(themes: List<Pair<String, Int>>) {
     Column(Modifier.padding(horizontal = 12.dp, vertical = 8.dp)) {
-        PanelLabel("TRENDING IN THE NEWS")
+        PanelLabel("TRENDING TOPICS")
         if (themes.isEmpty()) {
             Text(text = "No tagged headlines right now", color = TT.inkMuted, fontSize = 11.sp)
         }

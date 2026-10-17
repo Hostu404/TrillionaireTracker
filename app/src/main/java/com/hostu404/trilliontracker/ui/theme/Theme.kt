@@ -35,7 +35,6 @@ object TT {
     val inkMuted = Color(0xFF8A8A8A)
 
     val grid = Color(0xFF2A2A2A)
-    val baseline = Color(0xFF3A3A3A)
 
     /** The thin white line round every panel. */
     val border = Color.White
@@ -43,14 +42,10 @@ object TT {
     /** Headings, links and other chrome. */
     val accent = Color.White
 
-    /** System monospace, used for all text (see [typography] below). */
-    val monoNumeric = FontFamily.Monospace
-
     /** The line in the 7-day chart and the $1T bar. */
     val series = Color.White
 
     /** Status roles, all white: each one carries a glyph and a word too. */
-    val good = Color.White
     val warning = Color.White
     val critical = Color.White
 

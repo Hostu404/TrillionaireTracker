@@ -33,14 +33,9 @@ data class Snapshot(
     val nextUpdateIn: Long = 60,
     /** The line. $1,000,000,000,000. */
     val thresholdUsd: Double = 1_000_000_000_000.0,
-    /** Set when someone is currently over the line. */
-    val currentTrillionaireId: String? = null,
-    /** Most recent entry of [crossingHistory] — kept alongside it for the "it has happened before" footnote. */
-    val lastCrossing: Crossing? = null,
     /**
      * Every threshold crossing the backend has ever recorded, oldest first,
-     * capped to a bounded recent window server-side. Unlike [lastCrossing]
-     * (which is just this list's last entry) this is the actual log: someone
+     * capped to a bounded recent window server-side: someone
      * who's crossed and dropped back under multiple times shows up multiple
      * times, each with its own [Crossing.heldForSeconds] for exactly how
      * long that particular time over the line lasted.
@@ -56,16 +51,10 @@ data class Snapshot(
     val airports: Map<String, AirportInfo> = emptyMap(),
     /**
      * Every port UN/LOCODE referenced anywhere in this snapshot, resolved the
-     * same way [airports] resolves ICAO codes — see [portLabel].
+     * same way [airports] resolves ICAO codes — see [com.hostu404.trilliontracker.ui.PlaceNames].
      */
     val ports: Map<String, PortInfo> = emptyMap()
-) {
-    /** "Austin, TX" for a known code; the bare code itself if we have nothing better. */
-    fun airportLabel(icao: String): String = airports[icao]?.label ?: icao
-
-    /** "Seattle, WA" for a known UN/LOCODE; the bare code itself otherwise. */
-    fun portLabel(unlocode: String): String = ports[unlocode]?.label ?: unlocode
-}
+)
 
 @Serializable
 data class AirportInfo(
@@ -104,7 +93,6 @@ data class Crossing(
     val crossedAtEpoch: Long,
     /** Kept current every pass while [ongoing], frozen the moment it stops being true. */
     val heldForSeconds: Long,
-    val note: String = "",
     /** True while this specific crossing is still in progress — false once they've dropped back under. */
     val ongoing: Boolean = false
 )
@@ -290,17 +278,6 @@ data class FlightStatus(
      */
     val recentStops: List<AirportStop> = emptyList(),
     /**
-     * Time-share breakdown over the trailing window, sorted by seconds
-     * descending. Built entirely from [recentStops] plus the gaps between
-     * them (flight time) and any signal gaps — costs zero extra upstream
-     * calls, it's just bookkeeping on data already fetched for the fields
-     * above. [bucket] on each entry is either an airport ICAO, or one of the
-     * fixed sentinels: "IN_FLIGHT", "NO_SIGNAL", "UNKNOWN_AIRPORT", "OTHER"
-     * (the last one only added client-side when folding a busy week's tail
-     * into "Other airports" — see [com.hostu404.trilliontracker.ui.screens]).
-     */
-    val locationBreakdown: List<LocationShare> = emptyList(),
-    /**
      * How much of the trailing window is actually accounted for. Usually
      * less than 7 full days right after the backend starts tracking a new
      * aircraft — percentages are of this, not a blind 7-day assumption.
@@ -327,22 +304,15 @@ data class FlightStatus(
      */
     val probableIcao: String? = null,
     /**
-     * Permanent, never-pruned counterpart to [locationBreakdown] — one entry
+     * Permanent, never-pruned counterpart to [recentStops] — one entry
      * per airport this aircraft has ever been confirmed at, with a running
-     * total that (unlike [locationBreakdown]'s trailing-7-day figures) never
-     * ages out. See snapshot_worker.py's flight_status() "lifetime tally"
+     * total that (unlike the trailing 7 days) never ages out. See snapshot_worker.py's flight_status() "lifetime tally"
      * block for exactly how this accumulates — it's kept alongside the 7-day
      * view, not instead of it, and is tracked per-person server-side so it
      * survives even a tail/aircraft change. Sorted by [LifetimeLocationShare.totalSeconds]
-     * descending, same convention as [locationBreakdown].
+     * descending.
      */
     val lifetimeLocations: List<LifetimeLocationShare> = emptyList()
-)
-
-@Serializable
-data class LocationShare(
-    val bucket: String,
-    val seconds: Long
 )
 
 /**
@@ -357,7 +327,6 @@ data class LocationShare(
 data class LifetimeLocationShare(
     val location: String,
     val totalSeconds: Long,
-    val firstSeenEpoch: Long,
     val lastSeenEpoch: Long
 )
 
@@ -386,7 +355,6 @@ enum class FlightState { AIRBORNE, ON_GROUND, UNKNOWN }
 @Serializable
 data class VesselStatus(
     val name: String,
-    val mmsi: String,
     val state: VesselState,
     /** False until the MMSI -> person mapping is confirmed from public registries. */
     val verified: Boolean = false,
@@ -458,17 +426,6 @@ data class VesselStatus(
      */
     val recentStops: List<PortStop> = emptyList(),
     /**
-     * Server-side time-share aggregate, mirroring [FlightStatus.locationBreakdown]
-     * bucket-for-bucket ("UNDERWAY", "SIGNAL_LOST", "NO_SIGNAL", "UNKNOWN_PORT" in
-     * place of the flight sentinels). Not currently consumed client-side — same as
-     * the flight field, the UI rebuilds its own timeline segments from [recentStops]
-     * instead (see `buildTimelineSegments` in `PersonDetailScreen.kt`) so the strip
-     * and its legend can never drift out of sync with a second, server-computed
-     * total. Kept here for schema parity with the backend and in case a future
-     * consumer wants the raw aggregate without reconstructing it.
-     */
-    val locationBreakdown: List<LocationShare> = emptyList(),
-    /**
      * How much of the trailing window is actually accounted for — see
      * [FlightStatus.trackedSeconds]. This is the field the vessel "TIME BY
      * LOCATION" card actually gates and sizes its window on.
@@ -497,7 +454,7 @@ data class VesselStatus(
     /**
      * The maritime mirror of [FlightStatus.lifetimeLocations] — one entry per
      * port this vessel has ever been confirmed moored at, permanently, never
-     * pruned the way [locationBreakdown]'s trailing-7-day figures are. See
+     * pruned the way the trailing 7 days are. See
      * snapshot_worker.py's vessel_status() "lifetime tally" block. Sorted by
      * [LifetimeLocationShare.totalSeconds] descending.
      */
