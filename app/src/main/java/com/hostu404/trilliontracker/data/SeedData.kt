@@ -8,9 +8,9 @@ import kotlin.random.Random
  * Embedded fallback snapshot so the app runs with no backend.
  *
  * Figures are Forbes': for Musk, Bezos and Zuckerberg as published
- * 1 September 2026; for Luckey, Altman, Amodei and Trump, Forbes' real-time
- * figures of 16 October 2026 (no day change, since none of their wealth is
- * in a stock this app prices). They are a starting point for the UI, not a live feed —
+ * 1 September 2026; for Thiel, Luckey, Altman, Amodei and Trump, Forbes'
+ * real-time figures of 16 October 2026 (with that day's change for Thiel;
+ * none for the others). They are a starting point for the UI, not a live feed —
  * once [Config.SNAPSHOT_URL] is set, this is only used when the network
  * read fails.
  */
@@ -30,6 +30,7 @@ object SeedData {
         Row("musk", "Elon Musk", "SpaceX, Tesla", 892.0, 4.8),
         Row("bezos", "Jeff Bezos", "Amazon", 268.0, 0.9),
         Row("zuckerberg", "Mark Zuckerberg", "Meta", 197.0, 2.2),
+        Row("thiel", "Peter Thiel", "Palantir", 36.4, 1.6),
         Row("amodei", "Dario Amodei", "Anthropic", 15.5, 0.0),
         Row("trump", "Donald Trump", "Trump Organization", 6.6, 0.0),
         Row("luckey", "Palmer Luckey", "Anduril", 6.0, 0.0),
@@ -263,6 +264,7 @@ object SeedData {
         "altman" -> "https://en.wikipedia.org/wiki/Sam_Altman"
         "amodei" -> "https://en.wikipedia.org/wiki/Dario_Amodei"
         "trump" -> "https://en.wikipedia.org/wiki/Donald_Trump"
+        "thiel" -> "https://en.wikipedia.org/wiki/Peter_Thiel"
         else -> "https://en.wikipedia.org/wiki/${id.replaceFirstChar { it.uppercase() }}"
     }
 
@@ -282,6 +284,7 @@ object SeedData {
         "bezos" -> commonsFile("Jeff Bezos (cropped).jpg")
         "zuckerberg" -> commonsFile("Mark Zuckerberg (2025) (cropped).jpg")
         "luckey" -> commonsFile("CES 2026 - Palmer Luckey 01 (cropped).jpg")
+        "thiel" -> commonsFile("Peter Thiel by Gage Skidmore.jpg")
         else -> null
     }
 
@@ -299,6 +302,7 @@ object SeedData {
         "luckey" -> "1992-09-19"
         "altman" -> "1985-04-22"
         "trump" -> "1946-06-14"
+        "thiel" -> "1967-10-11"
         else -> null
     }
 
@@ -343,6 +347,10 @@ object SeedData {
             asOf = "2026-10-16", source = "Forbes",
             otherUsd = 3_200_000_000.0, otherLabel = "Stripe, Helion and other investments"
         )
+        "thiel" -> WealthEstimate(
+            asOf = "2026-10-16", source = "Forbes",
+            otherUsd = 18_200_000_000.0, otherLabel = "Founders Fund and other investments"
+        )
         else -> null
     }
 
@@ -369,6 +377,9 @@ object SeedData {
         "trump" -> "Born in Queens, New York City. Graduated from the " +
             "University of Pennsylvania's Wharton School with a bachelor's " +
             "degree in economics."
+        "thiel" -> "Born in Frankfurt, West Germany, and raised in the United " +
+            "States, South Africa and Namibia. Studied philosophy at Stanford " +
+            "University, then earned a law degree at Stanford Law School in 1992."
         else -> null
     }
 

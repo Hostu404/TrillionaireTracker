@@ -73,6 +73,12 @@ object Holdings {
         ),
         "bezos" to HoldingsInfo(holdings = listOf(Holding("AMZN", 950_400_000.0))),
         "zuckerberg" to HoldingsInfo(holdings = listOf(Holding("META", 334_000_000.0))),
+        // Palantir Class A + Class B (2026 proxy). The rest is a hand-set
+        // estimate, used the same way as Trump's below.
+        "thiel" to HoldingsInfo(
+            holdings = listOf(Holding("PLTR", 98_000_000.0)),
+            privateStakesUsd = 18_200_000_000.0
+        ),
         // Trump Media shares (Form 4, 2026-06-19). The rest of his wealth is
         // a hand-set estimate: the published snapshot's figure is used when
         // there is one (see updateAnchors), this one only as a fallback.

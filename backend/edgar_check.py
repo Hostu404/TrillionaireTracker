@@ -91,7 +91,9 @@ class PersonResult:
 
 
 def _get_json(url: str) -> Any:
-    req = urllib.request.Request(url, headers={"User-Agent": USER_AGENT, "Accept-Encoding": "gzip, deflate"})
+    # No Accept-Encoding: urllib doesn't decompress, and SEC answers a gzip
+    # request with gzip bytes that then can't be decoded as text.
+    req = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
     with urllib.request.urlopen(req, timeout=TIMEOUT) as resp:
         return json.loads(resp.read().decode("utf-8"))
 
@@ -251,7 +253,9 @@ def check_person(entry: dict[str, Any], state: dict[str, str]) -> tuple[PersonRe
         doc_url = DOCUMENT_URL.format(
             cik=cik.lstrip("0") or "0",
             accession_nodash=accession_nodash,
-            document=filing["primaryDocument"],
+            # primaryDocument is the rendered page ("xslF345X06/form4.xml");
+            # the raw XML is the same file name without that folder.
+            document=filing["primaryDocument"].rsplit("/", 1)[-1],
         )
         time.sleep(REQUEST_GAP_SECONDS)
         try:

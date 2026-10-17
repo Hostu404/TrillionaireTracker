@@ -34,7 +34,7 @@
     "Kept for everyone this app tracks: musk, bezos and zuckerberg (roster",
     "cut on 2026-10-16; the other seven people's entries were removed with",
     "them), then amodei, trump, luckey and altman, added the same day from",
-    "Wikipedia's sourcing. Luckey's parents aren't named in any source used",
+    "Wikipedia's sourcing, and thiel after them. Luckey's parents aren't named in any source used",
     "here, so their names are null rather than guessed."
   ],
   "people": {
@@ -601,6 +601,67 @@
             }
           },
           "trailEndsNote": "Public sourcing doesn't name Palmer's parents — only what his father did for work and that his mother homeschooled him — and nothing earlier. The record stops there rather than guessing at names."
+        }
+      ]
+    },
+    "thiel": {
+      "generations": [
+        {
+          "label": "Parents",
+          "region": "Frankfurt, West Germany → Cleveland, Ohio → South Africa and South West Africa (now Namibia) → Foster City, California",
+          "members": [
+            {
+              "name": "Klaus Friedrich Thiel",
+              "relation": "Father",
+              "years": null,
+              "facts": [
+                "A chemical engineer who worked for various mining companies, which kept the family moving.",
+                "Moved the family from Frankfurt to Cleveland, Ohio, when Peter was one year old.",
+                "Never became a US citizen."
+              ],
+              "sourceUrl": "https://en.wikipedia.org/wiki/Peter_Thiel",
+              "sourceLabel": "Wikipedia, “Peter Thiel”"
+            },
+            {
+              "name": "Susanne Thiel",
+              "relation": "Mother",
+              "years": null,
+              "facts": [
+                "Became a US citizen, as Peter did.",
+                "With Klaus, put $35,000 into Peter's first company, Fieldlink, later part of PayPal, in February 1999."
+              ],
+              "sourceUrl": "https://en.wikipedia.org/wiki/Peter_Thiel",
+              "sourceLabel": "Wikipedia, “Peter Thiel”"
+            }
+          ],
+          "globalContext": {
+            "text": "Before settling in Foster City in 1977, the family lived in South Africa and South West Africa under apartheid. Peter changed elementary schools seven times, including two years at a German-language school in Swakopmund. He has a younger brother, Patrick Michael Thiel.",
+            "sourceUrl": "https://en.wikipedia.org/wiki/Peter_Thiel",
+            "sourceLabel": "Wikipedia, “Peter Thiel”"
+          },
+          "beliefs": {
+            "text": "Peter grew up in an evangelical household. He calls himself a Christian, and found in René Girard's thinking a basis for his faith without his parents' fundamentalism. Influenced by them, he admired Nixon and Reagan as a teenager.",
+            "sourceUrl": "https://en.wikipedia.org/wiki/Peter_Thiel",
+            "sourceLabel": "Wikipedia, “Peter Thiel”"
+          },
+          "worldSnapshot": {
+            "politics": {
+              "text": "Four months before Peter was born on October 11, 1967, Israel fought Egypt, Syria and Jordan in the Six-Day War (June 5–10, 1967).",
+              "sourceUrl": "https://en.wikipedia.org/wiki/Six-Day_War",
+              "sourceLabel": "Wikipedia, “Six-Day War”"
+            },
+            "music": {
+              "text": "The Beatles released Sgt. Pepper's Lonely Hearts Club Band in the UK on May 26, 1967, the year Peter was born.",
+              "sourceUrl": "https://en.wikipedia.org/wiki/Sgt._Pepper%27s_Lonely_Hearts_Club_Band",
+              "sourceLabel": "Wikipedia, “Sgt. Pepper's Lonely Hearts Club Band”"
+            },
+            "technology": {
+              "text": "Four weeks after Peter was born, Apollo 4 made the first test flight of the Saturn V, the rocket that later took astronauts to the Moon (November 9, 1967).",
+              "sourceUrl": "https://en.wikipedia.org/wiki/Apollo_4",
+              "sourceLabel": "Wikipedia, “Apollo 4”"
+            }
+          },
+          "trailEndsNote": "The sourcing used here names Peter's parents but not his grandparents or anyone further back, so the record stops with his parents rather than guessing."
         }
       ]
     }

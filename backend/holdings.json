@@ -6,7 +6,8 @@
     "seven (huang, ellison, page, brin, ballmer, dell, ortega) were removed",
     "from this file, the app's bundled seed data, family history, the",
     "worker's state and the published snapshot — not just hidden. Later the",
-    "same day luckey, altman, amodei and trump were added (sourcing below).",
+    "same day luckey, altman, amodei and trump were added, then thiel",
+    "(sourcing below).",
     "",
     "Filled in 2026-09-20 from the sourcing below. Share counts drift with",
     "every 10b5-1 sale/grant and every SEC amendment, so re-check these",
@@ -144,7 +145,24 @@
     "(https://www.marketscreener.com/news/openai-chief-altman-has-over-2-billion-stake-in-companies-that-dealt-with-openai-court-filing-ce7f5bdcdc81f420)",
     "says he'd sold a Reddit stake by the end of 2025, while an Aug 2026",
     "article still counts 12.2M shares. Conflicting sources, so no share",
-    "count until an SEC filing settles it."
+    "count until an SEC filing settles it.",
+    "",
+    "thiel, added 2026-10-16: 98,000,000 PLTR shares = 68,871,556 Class A +",
+    "29,128,444 Class B (Class B converts 1:1 to Class A, so it's counted",
+    "the same), held through PLTR Holdings LLC, STS Holdings II LLC,",
+    "Rivendell 7 LLC and Rivendell 25 LLC, as of 2026-04-06, per Palantir's",
+    "2026 proxy statement, footnote 9",
+    "(https://www.sec.gov/Archives/edgar/data/1321655/000132165526000019/pltr-20260423.htm).",
+    "His 335,000 Class F shares (held in the Founder Voting Trust, the",
+    "founders' voting-control shares) aren't priced here; whatever value",
+    "Forbes gives them is inside the remainder below. No Form 4 from him",
+    "since 2026-03-04, so the proxy count is current. privateStakesUsd",
+    "$18.2B = Forbes' $36.4B real-time figure",
+    "(https://www.forbes.com/profile/peter-thiel/) minus the PLTR stake at",
+    "$186.03 on 2026-10-16 (~$18.2B): Founders Fund and other investments.",
+    "edgarCik 1211060 (THIEL PETER). Residence left out: Forbes says",
+    "Buenos Aires, Wikipedia says Miami (citing the New York Times, May",
+    "2026). No plane or yacht confidently tied to him."
   ],
 
   "people": [
@@ -210,6 +228,24 @@
       "birthDate": "1984-05-14",
       "residence": "Palo Alto, CA",
       "bio": "Born in White Plains, New York. Studied computer science at Harvard College, leaving in 2004 — sophomore year — to run Facebook full-time; Harvard awarded him an honorary degree in 2017."
+    },
+    {
+      "id": "thiel",
+      "name": "Peter Thiel",
+      "company": "Palantir",
+      "edgarCik": "1211060",
+      "holdings": [
+        { "ticker": "PLTR", "shares": 98000000 }
+      ],
+      "privateStakesUsd": 18200000000,
+      "estimateNote": "Founders Fund and other investments",
+      "estimateAsOf": "2026-10-16",
+      "estimateSource": "Forbes",
+      "cashUsd": 0,
+      "liabilitiesUsd": 0,
+      "newsQuery": "Peter Thiel",
+      "birthDate": "1967-10-11",
+      "bio": "Born in Frankfurt, West Germany, and raised in the United States, South Africa and Namibia. Studied philosophy at Stanford University, then earned a law degree at Stanford Law School in 1992."
     },
     {
       "id": "luckey",

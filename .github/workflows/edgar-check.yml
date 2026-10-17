@@ -1,0 +1,75 @@
+name: EDGAR check
+
+# Monthly re-check of holdings.json against SEC Form 4 filings, for everyone
+# with an edgarCik — see backend/edgar_check.py's docstring. The script never
+# edits holdings.json; it writes backend/edgar_report.md and remembers the
+# newest filing it has seen per person in backend/edgar_state.json. Both are
+# committed back so the next run only reports what's new, and an issue is
+# opened when there's filing activity for a person to review.
+on:
+  schedule:
+    - cron: "17 9 1 * *" # 09:17 UTC on the 1st of each month
+  workflow_dispatch: {} # lets you run it by hand from the Actions tab
+
+permissions:
+  contents: write # commit edgar_state.json / edgar_report.md back
+  issues: write   # open an issue when there's activity to review
+
+concurrency:
+  group: edgar-check
+  cancel-in-progress: false
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      # EDGAR_USER_AGENT is an optional repo variable (Settings -> Secrets and
+      # variables -> Actions -> Variables). Only passed on when it's set: an
+      # empty User-Agent would get every SEC request refused.
+      - name: Check EDGAR for new Form 4 filings
+        env:
+          UA: ${{ vars.EDGAR_USER_AGENT }}
+        run: |
+          if [ -n "$UA" ]; then export EDGAR_USER_AGENT="$UA"; fi
+          python3 backend/edgar_check.py
+
+      # Same "reset onto latest main and re-stamp" retry as snapshot.yml:
+      # the snapshot and AIS bots push to main every 5 minutes.
+      - name: Commit the report and the filings seen
+        run: |
+          git config user.name "edgar-bot"
+          git config user.email "actions@users.noreply.github.com"
+          mkdir -p /tmp/edgar-out
+          cp backend/edgar_state.json backend/edgar_report.md /tmp/edgar-out/
+          for attempt in 1 2 3 4 5; do
+            git fetch origin main
+            git reset --hard origin/main
+            cp /tmp/edgar-out/edgar_state.json /tmp/edgar-out/edgar_report.md backend/
+            git add backend/edgar_state.json backend/edgar_report.md
+            if git diff --cached --quiet; then
+              echo "nothing new to commit"
+              exit 0
+            fi
+            git commit -m "EDGAR check ($(date -u +%Y-%m-%d))"
+            if git push; then
+              exit 0
+            fi
+            echo "push rejected (attempt $attempt/5), retrying on latest main"
+            sleep $((RANDOM % 5 + 1))
+          done
+          echo "push still rejected after 5 retries"
+          exit 1
+
+      - name: Open an issue if there's filing activity to review
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if grep -q 'owned after' /tmp/edgar-out/edgar_report.md; then
+            gh issue create \
+              --title "EDGAR check: new Form 4 activity ($(date -u +%Y-%m-%d))" \
+              --body-file /tmp/edgar-out/edgar_report.md
+          else
+            echo "no new filing activity"
+          fi

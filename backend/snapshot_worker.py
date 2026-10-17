@@ -1947,6 +1947,7 @@ def fetch_news(query: str, limit: int = NEWS_FETCH_LIMIT) -> list[dict]:
 TRACKED_NEWS_THEMES = (
     "Alien News",
     "Bunkers",
+    "Underground",
     "Business & Deals",
     "God & Spirituality",
     "Technology & Innovation",
@@ -2085,9 +2086,13 @@ def classify_news_themes(titles: list[str]) -> list[str | None]:
         f"{theme_list}\n\n"
         "\"Alien News\" is anything about aliens, UFOs or UAPs, or the "
         "search for life beyond Earth. \"Bunkers\" is any mention of a "
-        "bunker, doomsday shelter, underground or survival compound, or "
-        "Miami's \"Billionaire Bunker\" island; it wins over every other "
-        "theme when a bunker is mentioned at all. \"God & Spirituality\" "
+        "bunker, doomsday shelter or survival compound, or Miami's "
+        "\"Billionaire Bunker\" island; it wins over every other theme when "
+        "a bunker is mentioned at all. \"Underground\" is anything built, "
+        "dug or fought underground: The Boring Company and its tunnels, "
+        "tunnel boring, underground transport, underground weapons sites "
+        "and tunnel warfare; it wins over every theme except Bunkers. "
+        "\"God & Spirituality\" "
         "is faith, God, religion, prayer, spirituality or the meaning of "
         "life, including the person in the headline talking about them. \"War & Defense\" is military "
         "matters and wars: ongoing conflicts, armed forces, weapons and "

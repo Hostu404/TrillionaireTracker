@@ -33,7 +33,7 @@ object Config {
      * hasn't caught up with holdings.json) is dropped as soon as it's read.
      */
     val TRACKED_PEOPLE: Set<String> = setOf(
-        "musk", "bezos", "zuckerberg", "luckey", "altman", "amodei", "trump"
+        "musk", "bezos", "zuckerberg", "thiel", "luckey", "altman", "amodei", "trump"
     )
 
     /**
@@ -44,6 +44,7 @@ object Config {
     val TRACKED_NEWS_THEMES: Set<String> = setOf(
         "Alien News",
         "Bunkers",
+        "Underground",
         "Business & Deals",
         "God & Spirituality",
         "Technology & Innovation",
