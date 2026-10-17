@@ -4,7 +4,7 @@ An Android app, built with Kotlin and Jetpack Compose, that tracks the net worth
 
 **[Download the latest APK](https://github.com/Hostu404/TrillionaireTracker/releases/latest)**
 
-<img width="308" alt="The main page: whether anyone is a trillionaire, total wealth tracked, connections, trending topics and everyone tracked" src="screenshots/main.png" />
+<img  alt="The main page: whether anyone is a trillionaire, total wealth tracked, connections, trending topics and everyone tracked" src="screenshots/main.png" />
 
 ## Features
 
