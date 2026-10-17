@@ -19,24 +19,26 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 
-/** Themes that carry a glyph beside their name. */
+/** Themes that carry a glyph after their name. */
 private val THEME_GLYPHS = mapOf("Alien News" to "👽")
 
 /** A news theme's name, with its glyph (greyscale, like everything else) when it has one. */
 @Composable
 fun ThemeLabel(theme: String, color: Color, fontSize: TextUnit, modifier: Modifier = Modifier) {
     Row(modifier, verticalAlignment = Alignment.CenterVertically) {
-        THEME_GLYPHS[theme]?.let { glyph ->
-            Text(text = glyph, fontSize = fontSize, modifier = Modifier.greyscale())
-            Spacer(Modifier.width(4.dp))
-        }
         Text(
             text = theme,
             color = color,
             fontSize = fontSize,
             maxLines = 1,
-            overflow = TextOverflow.Ellipsis
+            overflow = TextOverflow.Ellipsis,
+            // Shrinks before the glyph does, so a long name never pushes it off.
+            modifier = Modifier.weight(1f, fill = false)
         )
+        THEME_GLYPHS[theme]?.let { glyph ->
+            Spacer(Modifier.width(4.dp))
+            Text(text = glyph, fontSize = fontSize, modifier = Modifier.greyscale())
+        }
     }
 }
 
