@@ -1,0 +1,323 @@
+{
+  "_comment": [
+    "Connections — what the tracked people share in their backgrounds:",
+    "where they grew up, their schools and what shaped them. Business deals,",
+    "investments and politics are left out on purpose (they're a given).",
+    "Religion and ethnicity are left out too. Bundled with the app like",
+    "family_history.json, not part of the live snapshot.",
+    "",
+    "Each fact cites its own source. Checked against Wikipedia on",
+    "2026-10-17. A link needs at least two tracked people; people who",
+    "aren't tracked are simply skipped by the app."
+  ],
+  "links": [
+    {
+      "title": "Apartheid-era southern Africa",
+      "facts": [
+        {
+          "person": "musk",
+          "text": "Born in Pretoria in 1971 and grew up in South Africa under apartheid, leaving for Canada in 1989.",
+          "sourceLabel": "Wikipedia, “Elon Musk”",
+          "sourceUrl": "https://en.wikipedia.org/wiki/Elon_Musk"
+        },
+        {
+          "person": "thiel",
+          "text": "His family lived in South Africa and South West Africa (now Namibia) under apartheid, before settling in California in 1977.",
+          "sourceLabel": "Wikipedia, “Peter Thiel”",
+          "sourceUrl": "https://en.wikipedia.org/wiki/Peter_Thiel"
+        }
+      ],
+      "note": {
+        "text": "The Guardian has written about how the roots of the “PayPal mafia” reach back to apartheid South Africa.",
+        "sourceLabel": "The Guardian, 26 January 2025",
+        "sourceUrl": "https://www.theguardian.com/technology/2025/jan/26/elon-musk-peter-thiel-apartheid-south-africa"
+      }
+    },
+    {
+      "title": "Immigrant families",
+      "facts": [
+        {
+          "person": "musk",
+          "text": "Emigrated from South Africa to Canada in 1989, then moved to the United States.",
+          "sourceLabel": "Wikipedia, “Elon Musk”",
+          "sourceUrl": "https://en.wikipedia.org/wiki/Elon_Musk"
+        },
+        {
+          "person": "thiel",
+          "text": "His family moved from Germany to the United States when he was one.",
+          "sourceLabel": "Wikipedia, “Peter Thiel”",
+          "sourceUrl": "https://en.wikipedia.org/wiki/Peter_Thiel"
+        },
+        {
+          "person": "bezos",
+          "text": "Adopted at four by his stepfather, Miguel Bezos, a Cuban immigrant.",
+          "sourceLabel": "Wikipedia, “Jeff Bezos”",
+          "sourceUrl": "https://en.wikipedia.org/wiki/Jeff_Bezos"
+        },
+        {
+          "person": "trump",
+          "text": "His mother emigrated from Scotland in 1930.",
+          "sourceLabel": "Wikipedia, “Mary Anne MacLeod Trump”",
+          "sourceUrl": "https://en.wikipedia.org/wiki/Mary_Anne_MacLeod_Trump"
+        },
+        {
+          "person": "amodei",
+          "text": "His father, Riccardo Amodei, came from Massa Marittima in Tuscany.",
+          "sourceLabel": "Wikipedia, “Dario Amodei”",
+          "sourceUrl": "https://en.wikipedia.org/wiki/Dario_Amodei"
+        }
+      ]
+    },
+    {
+      "title": "Several passports",
+      "facts": [
+        {
+          "person": "musk",
+          "text": "South African and Canadian from birth, and American since 2002.",
+          "sourceLabel": "Wikipedia, “Elon Musk”",
+          "sourceUrl": "https://en.wikipedia.org/wiki/Elon_Musk"
+        },
+        {
+          "person": "thiel",
+          "text": "German by birth, American by naturalisation, and a New Zealander since 2011.",
+          "sourceLabel": "Wikipedia, “Peter Thiel”",
+          "sourceUrl": "https://en.wikipedia.org/wiki/Peter_Thiel"
+        }
+      ]
+    },
+    {
+      "title": "German roots",
+      "facts": [
+        {
+          "person": "thiel",
+          "text": "Born in Frankfurt in 1967.",
+          "sourceLabel": "Wikipedia, “Peter Thiel”",
+          "sourceUrl": "https://en.wikipedia.org/wiki/Peter_Thiel"
+        },
+        {
+          "person": "trump",
+          "text": "His grandfather Friedrich Trump emigrated from Kallstadt, Bavaria, in 1885.",
+          "sourceLabel": "Wikipedia, “Frederick Trump”",
+          "sourceUrl": "https://en.wikipedia.org/wiki/Frederick_Trump"
+        }
+      ]
+    },
+    {
+      "title": "Bay Area childhood",
+      "facts": [
+        {
+          "person": "thiel",
+          "text": "Grew up in Foster City from 1977 and went to San Mateo High School.",
+          "sourceLabel": "Wikipedia, “Peter Thiel”",
+          "sourceUrl": "https://en.wikipedia.org/wiki/Peter_Thiel"
+        },
+        {
+          "person": "amodei",
+          "text": "Born and raised in San Francisco; went to Lowell High School.",
+          "sourceLabel": "Wikipedia, “Dario Amodei”",
+          "sourceUrl": "https://en.wikipedia.org/wiki/Dario_Amodei"
+        }
+      ]
+    },
+    {
+      "title": "New York childhood",
+      "facts": [
+        {
+          "person": "trump",
+          "text": "Grew up in Jamaica Estates, Queens.",
+          "sourceLabel": "Wikipedia, “Donald Trump”",
+          "sourceUrl": "https://en.wikipedia.org/wiki/Donald_Trump"
+        },
+        {
+          "person": "zuckerberg",
+          "text": "Grew up in Dobbs Ferry, just north of New York City.",
+          "sourceLabel": "Wikipedia, “Mark Zuckerberg”",
+          "sourceUrl": "https://en.wikipedia.org/wiki/Mark_Zuckerberg"
+        }
+      ]
+    },
+    {
+      "title": "Same Wharton degree",
+      "facts": [
+        {
+          "person": "musk",
+          "text": "Bachelor of Science in economics from the Wharton School, 1997.",
+          "sourceLabel": "Wikipedia, “Elon Musk”",
+          "sourceUrl": "https://en.wikipedia.org/wiki/Elon_Musk"
+        },
+        {
+          "person": "trump",
+          "text": "Bachelor of Science in economics from the Wharton School, 1968.",
+          "sourceLabel": "Wikipedia, “Donald Trump”",
+          "sourceUrl": "https://en.wikipedia.org/wiki/Donald_Trump"
+        }
+      ]
+    },
+    {
+      "title": "Stanford",
+      "facts": [
+        {
+          "person": "thiel",
+          "text": "Philosophy degree, then Stanford Law School (1992).",
+          "sourceLabel": "Wikipedia, “Peter Thiel”",
+          "sourceUrl": "https://en.wikipedia.org/wiki/Peter_Thiel"
+        },
+        {
+          "person": "altman",
+          "text": "Studied computer science for two years, leaving in 2005.",
+          "sourceLabel": "Wikipedia, “Sam Altman”",
+          "sourceUrl": "https://en.wikipedia.org/wiki/Sam_Altman"
+        },
+        {
+          "person": "amodei",
+          "text": "Physics degree.",
+          "sourceLabel": "Wikipedia, “Dario Amodei”",
+          "sourceUrl": "https://en.wikipedia.org/wiki/Dario_Amodei"
+        }
+      ]
+    },
+    {
+      "title": "Princeton",
+      "facts": [
+        {
+          "person": "bezos",
+          "text": "Engineering degree, 1986, after starting out in physics.",
+          "sourceLabel": "Wikipedia, “Jeff Bezos”",
+          "sourceUrl": "https://en.wikipedia.org/wiki/Jeff_Bezos"
+        },
+        {
+          "person": "amodei",
+          "text": "Doctorate in biophysics.",
+          "sourceLabel": "Wikipedia, “Dario Amodei”",
+          "sourceUrl": "https://en.wikipedia.org/wiki/Dario_Amodei"
+        }
+      ]
+    },
+    {
+      "title": "Physics graduates",
+      "facts": [
+        {
+          "person": "musk",
+          "text": "Physics degree from the University of Pennsylvania.",
+          "sourceLabel": "Wikipedia, “Elon Musk”",
+          "sourceUrl": "https://en.wikipedia.org/wiki/Elon_Musk"
+        },
+        {
+          "person": "amodei",
+          "text": "Physics degree from Stanford, then a doctorate in biophysics.",
+          "sourceLabel": "Wikipedia, “Dario Amodei”",
+          "sourceUrl": "https://en.wikipedia.org/wiki/Dario_Amodei"
+        }
+      ]
+    },
+    {
+      "title": "Dropped out to build a company",
+      "facts": [
+        {
+          "person": "zuckerberg",
+          "text": "Left Harvard in his second year to work on Facebook.",
+          "sourceLabel": "Wikipedia, “Mark Zuckerberg”",
+          "sourceUrl": "https://en.wikipedia.org/wiki/Mark_Zuckerberg"
+        },
+        {
+          "person": "altman",
+          "text": "Left Stanford in 2005 and co-founded Loopt.",
+          "sourceLabel": "Wikipedia, “Sam Altman”",
+          "sourceUrl": "https://en.wikipedia.org/wiki/Sam_Altman"
+        },
+        {
+          "person": "luckey",
+          "text": "Left university to work full time on the Oculus Rift.",
+          "sourceLabel": "Wikipedia, “Palmer Luckey”",
+          "sourceUrl": "https://en.wikipedia.org/wiki/Palmer_Luckey"
+        }
+      ]
+    },
+    {
+      "title": "Tolkien",
+      "facts": [
+        {
+          "person": "musk",
+          "text": "Credits The Lord of the Rings with part of his success.",
+          "sourceLabel": "Wikipedia, “Elon Musk”",
+          "sourceUrl": "https://en.wikipedia.org/wiki/Elon_Musk"
+        },
+        {
+          "person": "thiel",
+          "text": "Has read The Lord of the Rings more than ten times, and named Palantir and Mithril Capital after it.",
+          "sourceLabel": "Wikipedia, “Peter Thiel”",
+          "sourceUrl": "https://en.wikipedia.org/wiki/Peter_Thiel"
+        },
+        {
+          "person": "luckey",
+          "text": "Named Anduril after Aragorn's sword.",
+          "sourceLabel": "Wikipedia, “Anduril Industries”",
+          "sourceUrl": "https://en.wikipedia.org/wiki/Anduril_Industries"
+        }
+      ]
+    },
+    {
+      "title": "Asimov",
+      "facts": [
+        {
+          "person": "musk",
+          "text": "Credits Asimov's Foundation series with part of his success.",
+          "sourceLabel": "Wikipedia, “Elon Musk”",
+          "sourceUrl": "https://en.wikipedia.org/wiki/Elon_Musk"
+        },
+        {
+          "person": "thiel",
+          "text": "Counts Asimov among his favourite authors.",
+          "sourceLabel": "Wikipedia, “Peter Thiel”",
+          "sourceUrl": "https://en.wikipedia.org/wiki/Peter_Thiel"
+        }
+      ]
+    },
+    {
+      "title": "Coded as kids",
+      "facts": [
+        {
+          "person": "musk",
+          "text": "Sold his game Blastar to a computer magazine at 12.",
+          "sourceLabel": "Wikipedia, “Elon Musk”",
+          "sourceUrl": "https://en.wikipedia.org/wiki/Elon_Musk"
+        },
+        {
+          "person": "zuckerberg",
+          "text": "Built “ZuckNet”, linking his family's computers, at about 11.",
+          "sourceLabel": "Wikipedia, “Mark Zuckerberg”",
+          "sourceUrl": "https://en.wikipedia.org/wiki/Mark_Zuckerberg"
+        }
+      ]
+    },
+    {
+      "title": "Ready for the worst",
+      "facts": [
+        {
+          "person": "altman",
+          "text": "Said in 2016 he has guns, gold, gas masks and land in Big Sur he can fly to.",
+          "sourceLabel": "Wikipedia, “Sam Altman”",
+          "sourceUrl": "https://en.wikipedia.org/wiki/Sam_Altman"
+        },
+        {
+          "person": "thiel",
+          "text": "Became a New Zealand citizen in 2011 after 12 days in the country.",
+          "sourceLabel": "Wikipedia, “Peter Thiel”",
+          "sourceUrl": "https://en.wikipedia.org/wiki/Peter_Thiel"
+        },
+        {
+          "person": "zuckerberg",
+          "text": "Is building a partly gated retreat of about 1,450 acres on Kauai.",
+          "sourceLabel": "Wikipedia, “Mark Zuckerberg”",
+          "sourceUrl": "https://en.wikipedia.org/wiki/Mark_Zuckerberg"
+        },
+        {
+          "person": "bezos",
+          "text": "Lives on Indian Creek, the Miami island nicknamed the “Billionaire Bunker”.",
+          "sourceLabel": "Wikipedia, “Indian Creek, Florida”",
+          "sourceUrl": "https://en.wikipedia.org/wiki/Indian_Creek,_Florida"
+        }
+      ]
+    }
+  ]
+}

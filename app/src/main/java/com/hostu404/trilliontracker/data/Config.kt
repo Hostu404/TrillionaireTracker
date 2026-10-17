@@ -45,10 +45,9 @@ object Config {
         "Alien News",
         "Bunkers",
         "Underground",
-        "Business & Deals",
+        "Antichrist",
+        "Apocalypse",
         "God & Spirituality",
-        "Technology & Innovation",
-        "Markets & Wealth",
         "War & Defense"
     )
 

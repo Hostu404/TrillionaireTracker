@@ -1948,10 +1948,9 @@ TRACKED_NEWS_THEMES = (
     "Alien News",
     "Bunkers",
     "Underground",
-    "Business & Deals",
+    "Antichrist",
+    "Apocalypse",
     "God & Spirituality",
-    "Technology & Innovation",
-    "Markets & Wealth",
     "War & Defense",
 )
 NEWS_THEMES = TRACKED_NEWS_THEMES + ("Other",)
@@ -2092,21 +2091,25 @@ def classify_news_themes(titles: list[str]) -> list[str | None]:
         "dug or fought underground: The Boring Company and its tunnels, "
         "tunnel boring, underground transport, underground weapons sites "
         "and tunnel warfare; it wins over every theme except Bunkers. "
-        "\"God & Spirituality\" "
+        "\"Antichrist\" is any mention of the Antichrist, including the "
+        "person in the headline talking or lecturing about it; it wins over "
+        "every theme except Bunkers and Underground. \"Apocalypse\" is the "
+        "end of the world or of civilisation: doomsday, Armageddon, the end "
+        "times, the Rapture, or humanity being wiped out by AI, nuclear war, "
+        "pandemics or anything else; it wins over God & Spirituality and "
+        "War & Defense. \"God & Spirituality\" "
         "is faith, God, religion, prayer, spirituality or the meaning of "
         "life, including the person in the headline talking about them. \"War & Defense\" is military "
         "matters and wars: ongoing conflicts, armed forces, weapons and "
         "defense policy, including the person in the headline commenting on them or their "
-        "companies' part in them. \"Business & Deals\" is companies, deals, "
-        "acquisitions, contracts and management. \"Technology & "
-        "Innovation\" is products, launches, research and engineering. "
-        "\"Markets & Wealth\" is stock moves, net worth, rankings and pay.\n"
-        "Use \"Other\" for anything that fits none of these (politics, "
-        "lawsuits, personal life, profiles and so on).\n\n"
+        "companies' part in them.\n"
+        "Use \"Other\" for anything that fits none of these (business, "
+        "deals, products, technology, markets, wealth, politics, lawsuits, "
+        "personal life, profiles and so on).\n\n"
         f"Headlines:\n{numbered}\n\n"
         "Respond with ONLY a JSON array of theme strings, in the same order "
         "as the headlines, one entry per headline, using the exact theme "
-        "text above (e.g. [\"Markets & Wealth\", \"Other\"]). No other text."
+        "text above (e.g. [\"War & Defense\", \"Other\"]). No other text."
     )
 
     # The API key rides in the URL's query string, not a header — that's

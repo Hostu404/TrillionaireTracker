@@ -20,15 +20,23 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.runtime.remember
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalUriHandler
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.hostu404.trilliontracker.data.Config
+import com.hostu404.trilliontracker.data.ConnectionsRepository
+import com.hostu404.trilliontracker.data.FlightState
+import com.hostu404.trilliontracker.data.VesselState
 import com.hostu404.trilliontracker.data.Person
 import com.hostu404.trilliontracker.ui.Format
 import com.hostu404.trilliontracker.ui.TrackerUiState
+import com.hostu404.trilliontracker.ui.components.ConnectionsSection
 import com.hostu404.trilliontracker.ui.components.DayChange
 import com.hostu404.trilliontracker.ui.components.PersonPhoto
 import com.hostu404.trilliontracker.ui.components.SheetLine
@@ -49,6 +57,8 @@ fun TrackerScreen(
     onRefresh: () -> Unit
 ) {
     val threshold = state.snapshot?.thresholdUsd ?: 1_000_000_000_000.0
+    val context = LocalContext.current
+    val connections = remember { ConnectionsRepository.all(context) }
 
     Column(
         Modifier
@@ -64,6 +74,11 @@ fun TrackerScreen(
                 .border(1.dp, TT.border, TT.panelShape)
         ) {
             StatusPanel(state, threshold)
+            SheetLine()
+            ConnectionsSection(
+                people = Config.TRACKED_PEOPLE.mapNotNull { id -> state.people.find { it.id == id } },
+                links = connections
+            )
             SheetLine()
             Trending(state.trendingThemes)
             state.rankedPeople.forEachIndexed { index, person ->
@@ -212,9 +227,8 @@ private fun Trending(themes: List<Pair<String, Int>>) {
         if (themes.isEmpty()) {
             Text(text = "No tagged headlines right now", color = TT.inkMuted, fontSize = 11.sp)
         }
-        themes.forEachIndexed { index, (theme, count) ->
+        themes.forEach { (theme, count) ->
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(text = "${index + 1} ", color = TT.inkMuted, fontSize = 12.sp)
                 ThemeLabel(theme = theme, color = TT.inkPrimary, fontSize = 12.sp, modifier = Modifier.weight(1f))
                 Text(
                     text = if (count == 1) "1 headline" else "$count headlines",
@@ -272,16 +286,37 @@ private fun PersonRow(
         PersonPhoto(name = person.name, photoUrl = person.photoUrl, size = 48.dp)
         Spacer(Modifier.width(10.dp))
         Column(Modifier.weight(1f)) {
+            // Their plane or boat on the move, followed live (as on their page).
+            val moving = listOfNotNull(
+                "✈".takeIf { person.flight?.state == FlightState.AIRBORNE },
+                "⚓".takeIf { person.vessel?.state == VesselState.UNDERWAY }
+            )
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                    text = "$rank ${person.name.uppercase()}",
-                    color = TT.inkPrimary,
-                    fontSize = 13.sp,
-                    fontWeight = FontWeight.Bold,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.weight(1f)
-                )
+                // The name and any vehicle icon share the space before today's change.
+                Row(Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        text = "$rank ${person.name.uppercase()}",
+                        color = TT.inkPrimary,
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Bold,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f, fill = false)
+                    )
+                    if (moving.isNotEmpty()) {
+                        Text(
+                            text = " " + moving.joinToString(" "),
+                            color = TT.inkPrimary,
+                            fontSize = 12.sp,
+                            modifier = Modifier.semantics {
+                                contentDescription = listOfNotNull(
+                                    "plane in the air".takeIf { "✈" in moving },
+                                    "boat underway".takeIf { "⚓" in moving }
+                                ).joinToString(" and ")
+                            }
+                        )
+                    }
+                }
                 DayChange(deltaUsd = person.dayChangeUsd, suffix = "", fontSize = 11.sp)
             }
             Text(

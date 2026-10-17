@@ -10,6 +10,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.BiasAlignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.ColorMatrix
 import androidx.compose.ui.graphics.painter.ColorPainter
@@ -37,13 +39,15 @@ fun PersonPhoto(
     name: String,
     photoUrl: String?,
     size: Dp,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    shape: Shape = TT.panelShape
 ) {
     Box(
         modifier = modifier
             .size(size)
-            .border(1.dp, TT.border, TT.panelShape)
-            .padding(1.dp),
+            .border(1.dp, TT.border, shape)
+            .padding(1.dp)
+            .clip(shape),
         contentAlignment = Alignment.Center
     ) {
         if (photoUrl != null) {

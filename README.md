@@ -1,63 +1,51 @@
 # Trillionaire Tracker
 
-An Android app, built with Kotlin and Jetpack Compose, that tracks Elon Musk, Jeff Bezos, Mark Zuckerberg, Peter Thiel, Dario Amodei, Donald Trump, Palmer Luckey and Sam Altman: live net worth, real-time private jet and yacht movements, news, and biography — backed by a free, serverless Python worker.
+An Android app, built with Kotlin and Jetpack Compose, that tracks the net worth, aircraft and yacht movements, news coverage and backgrounds of eight people: Elon Musk, Jeff Bezos, Mark Zuckerberg, Peter Thiel, Dario Amodei, Donald Trump, Palmer Luckey and Sam Altman. A scheduled Python worker gathers the data from public sources and publishes it as a single static file.
 
 **[Download the latest APK](https://github.com/Hostu404/TrillionaireTracker/releases/latest)**
 
-<img width="308" alt="The main page: is anyone a trillionaire right now, total wealth, trending news themes, and everyone tracked" src="screenshots/main.png" />
+<img width="308" alt="The main page: whether anyone is a trillionaire, total wealth tracked, connections, trending topics and everyone tracked" src="screenshots/main.png" />
 
 ## Features
 
-- **Live net worth** — sum(shares × live price) + private stakes + cash − liabilities, from real SEC filings and live market/FX prices, ticking smoothly between polls. Currency-aware (a non-USD holding converts to USD via a live FX rate, never assumed). A real rolling 7-day price history, backfilled with real prices the moment a new person is tracked.
-- **Live flight tracking** — a real-time ADS-B position on the map while a tracked plane is airborne, with three free, keyless data sources and automatic fallback between them. Airport-level only on the ground, never a raw coordinate — except a narrow, discussed case (added 2026-09-23): a real ground fix that matches no known airport shows an approximate area and a visibly distinct dashed-ring pin instead of just disappearing. See DESIGN.md for the exact scoping.
-- **Vessel tracking** — the same idea for yachts via free AIS data, with no always-on server required. Port-level only, with the same narrow approximate-area exception as flights (here for both moored and underway, since vessels have no separate live-position path).
-- **Time-by-location strip** — a chronological readout of how the tracked window splits across airports/ports, in-transit time, and signal gaps — one shared component for both flights and vessels.
-- **Biography** — birthdate (age computed live, never stored), city-level residence, a short sourced bio, a Wikipedia summary and free-license photo, and a link-out for social — nothing scraped or embedded live.
-- **News, with AI theme tags** — each person's latest headlines from free, keyless RSS, optionally classified by a free-tier Gemini call into a fixed set of themes (👽 Alien News, Bunkers, Underground, Business & Deals, God & Spirituality, Technology & Innovation, Markets & Wealth, War & Defense); a headline that fits none of them gets no tag. Fully opt-in — the app works identically with plain, untagged headlines if you skip the API key. A permanent lifetime tally per person shows what they tend to get covered for, across their whole tracked history.
-- **Self-managing backend** — every time series (prices, flight/vessel history, the trillionaire-crossing log) trims itself to a real rolling 7 days automatically, so the data and the repo it lives in stay flat-sized forever.
-
-## Why is Trillionaire Tracker?
-
-https://youtube.com/watch?v=wP8RgWJ76xE
-
+- **Net worth**: shares at live market prices, plus private stakes at their last funding-round valuation, plus cash, minus liabilities. Share counts come from SEC filings, and non-USD holdings are converted at a live exchange rate. Each figure shows how it is made and when its estimated parts were last checked.
+- **Aircraft**: flight state, departure, arrival and the airports visited in the last 7 days, from free ADS-B feeds with automatic fallback between sources. Locations are kept at airport level; a live position is shown only while a plane is airborne and is never stored.
+- **Yachts**: the same for vessels, from AIS data, at port level.
+- **News**: each person's latest headlines from Google News. An optional Gemini call sorts them into seven tracked themes (Alien News, Bunkers, Underground, Antichrist, Apocalypse, God & Spirituality, War & Defense), with an all-time count per person and the most common current themes on the main page.
+- **Connections**: a circular diagram of what the eight share in their backgrounds (upbringing, schooling, family origins and formative influences), each fact sourced. Business and politics are excluded.
+- **Biography and family history**: birth date, city-level residence, a short sourced biography, a Wikipedia summary with a freely licensed photo, and a sourced family history.
 
 ## How it works
 
-One backend worker polls upstream sources on a schedule and publishes a single `snapshot.json` to a free CDN; every client just reads that cached file, so upstream cost is flat no matter how many people install the app.
-
 ```
-worker (every 5 min) → snapshot.json → CDN → any number of clients
+worker (every 5 min) → snapshot.json → GitHub Pages → app
 ```
 
-The app ships with a working seed snapshot, so it runs immediately with no setup. Point `Config.SNAPSHOT_URL` at your own published snapshot to go live — nothing else changes.
+A worker on GitHub Actions polls public sources, writes `snapshot.json` and publishes it through GitHub Pages. The app only reads that file, so load on the upstream sources does not grow with the number of users. The app ships with a seed snapshot and runs without a backend.
 
-## Run it
+## Running it
 
-1. Open the project in Android Studio, let it sync, and run on a device or emulator (minSdk 26). It works right away on seed data.
-2. To go live: stand up the backend below, then set `Config.SNAPSHOT_URL` to your published `snapshot.json` URL.
+**App:** open the project in Android Studio and run it on a device or emulator (minSdk 26). It starts on the seed data.
 
-## Backend
+**Backend:**
 
 ```bash
 cd backend
-cp holdings.example.json holdings.json   # fill it in from SEC filings
+cp holdings.example.json holdings.json   # fill in from SEC filings
 python3 snapshot_worker.py               # writes snapshot.json
 ```
 
-Python standard library only, no API keys required. `.github/workflows/snapshot.yml` runs this for free every 5 minutes on GitHub Actions and publishes to GitHub Pages — a complete free hosting path, no server of your own. `.github/workflows/ais.yml` does the same for vessel tracking (needs a free `AISSTREAM_API_KEY` secret), and AI news theme tags need a free `GEMINI_API_KEY`/`GEMINI_NEWS_MODEL` pair — both are opt-in, and everything works with plain untagged/no-signal data if you skip them.
+Python standard library only. To publish it, follow [Going live](DESIGN.md#going-live) and set `Config.SNAPSHOT_URL` to the published file. Vessel tracking needs a free `AISSTREAM_API_KEY`, and news themes need `GEMINI_API_KEY` and `GEMINI_NEWS_MODEL`. Both are optional.
 
-See **[DESIGN.md](DESIGN.md)** for the step-by-step go-live checklist, the detailed design rationale, data sourcing, and every documented caveat or limitation this project has.
+## Limitations
 
-## Known gaps
+- Everything shown comes from public records: SEC filings, ADS-B and AIS broadcasts, Wikipedia and news feeds. The app is only as accurate as those sources and shows nothing beyond them.
+- Private stakes and other estimated figures are updated by hand and dated in the app.
+- Zuckerberg's share count is derived from a reported stake percentage and needs periodic re-checking.
+- Changing the news theme list resets every all-time theme count.
 
-- Zuckerberg's share count is derived (a reported stake percentage × shares outstanding) rather than read straight off a filing, so it needs re-checking by hand now and then.
-
-- Everything tracked is already public information (SEC filings, ADS-B/AIS, Wikipedia, public social links) — never inferred or scraped from a private source. That limits how wrong the app can be, and also how much it will ever show.
-
-- Changing the news theme list starts every all-time theme count over from zero, and re-sorts the headlines still in the cache.
-
-Full detail on all of the above: **[DESIGN.md](DESIGN.md)**.
+Design notes, data sources and further limitations: [DESIGN.md](DESIGN.md).
 
 ## License
 
-MIT — see [LICENSE](LICENSE). Free to use, modify, and redistribute.
+MIT. See [LICENSE](LICENSE).

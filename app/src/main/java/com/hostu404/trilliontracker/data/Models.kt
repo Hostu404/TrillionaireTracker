@@ -480,8 +480,8 @@ data class NewsItem(
     val publishedEpoch: Long,
     /**
      * One of [com.hostu404.trilliontracker.data.Config.TRACKED_NEWS_THEMES]
-     * ("Alien News", "Bunkers", "Underground", "Business & Deals", "God & Spirituality",
-     * "Technology & Innovation", "Markets & Wealth", "War & Defense") — see
+     * ("Alien News", "Bunkers", "Underground", "Antichrist", "Apocalypse",
+     * "God & Spirituality", "War & Defense") — see
      * `classify_news_themes()`
      * and `TRACKED_NEWS_THEMES` in snapshot_worker.py for how a headline
      * gets sorted into one (a Google Gemini API call, backend-side only —
